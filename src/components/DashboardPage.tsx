@@ -21,6 +21,7 @@ export default function DashboardPage() {
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProjects();
@@ -39,16 +40,24 @@ export default function DashboardPage() {
   const createProject = async () => {
     if (!newName.trim()) return;
     setCreating(true);
-    const res = await fetch('/api/projects', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newName, description: newDesc }),
-    });
-    if (res.ok) {
-      setNewName('');
-      setNewDesc('');
-      setShowNew(false);
-      await fetchProjects();
+    setError(null);
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName, description: newDesc }),
+      });
+      if (res.ok) {
+        setNewName('');
+        setNewDesc('');
+        setShowNew(false);
+        await fetchProjects();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || `Failed to create project (${res.status})`);
+      }
+    } catch (err) {
+      setError(`Network error: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
     setCreating(false);
   };
@@ -131,11 +140,14 @@ export default function DashboardPage() {
               marginBottom: 12,
             }}
           />
+          {error && (
+            <p style={{ color: 'var(--red)', fontSize: '0.82rem', marginBottom: 8 }}>{error}</p>
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-success" onClick={createProject} disabled={creating || !newName.trim()}>
               {creating ? 'Creating...' : 'Create Project'}
             </button>
-            <button className="btn btn-secondary" onClick={() => { setShowNew(false); setNewName(''); setNewDesc(''); }}>
+            <button className="btn btn-secondary" onClick={() => { setShowNew(false); setNewName(''); setNewDesc(''); setError(null); }}>
               Cancel
             </button>
           </div>
