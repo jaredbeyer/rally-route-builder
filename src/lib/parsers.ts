@@ -1,5 +1,5 @@
 import type { RoutePoint, DetectedTurn, MileMarker, Waypoint } from './types';
-import { TURN_COLORS } from './types';
+import { parseGrade } from './types';
 
 export interface ParseResult {
   routePoints: RoutePoint[];
@@ -44,15 +44,13 @@ export function parseGPX(xmlString: string): ParseResult {
     if (type === 'turn') {
       isReimport = true;
       const symParts = sym.split('_');
-      const sharpness = Object.keys(TURN_COLORS).includes(symParts[0])
-        ? (symParts[0] as DetectedTurn['sharpness'])
-        : 'moderate';
+      const grade = parseGrade(symParts[0]);
       const direction: 'left' | 'right' = symParts[1] === 'right' ? 'right' : 'left';
       const angleMatch = desc.match(/([\d.]+)\s*degrees/i);
       const angle = angleMatch ? parseFloat(angleMatch[1]) : 90;
-      const autoPattern = /^(FLAT|SLIGHT|MODERATE|SHARP|HAIRPIN)\s+[LR]\s+\d+deg$/i;
+      const autoPattern = /^(?:[LR][1-6]|(?:FLAT|SLIGHT|MODERATE|SHARP|HAIRPIN)\s+[LR])(?:\s+\d+deg)?$/i;
       const label = autoPattern.test(name) ? '' : name;
-      detectedTurns.push({ lat, lon, angle, direction, sharpness, label, idx: 0 });
+      detectedTurns.push({ lat, lon, angle, direction, grade, label, idx: 0 });
     } else if (type === 'mile_marker') {
       isReimport = true;
       // Restore custom icon from sym if it's an emoji (not "mile_marker")
@@ -133,15 +131,13 @@ export function parseKML(xmlString: string): ParseResult {
       const name = pm.querySelector('name')?.textContent || '';
       const styleUrl = (pm.querySelector('styleUrl')?.textContent || '').replace('#', '');
       const styleParts = styleUrl.split('_');
-      const sharpness = Object.keys(TURN_COLORS).includes(styleParts[0])
-        ? (styleParts[0] as DetectedTurn['sharpness'])
-        : 'moderate';
+      const grade = parseGrade(styleParts[0]);
       const direction: 'left' | 'right' = styleParts[1] === 'right' ? 'right' : 'left';
       const angleMatch = name.match(/(\d+)deg/i);
       const angle = angleMatch ? parseFloat(angleMatch[1]) : 90;
-      const autoPattern = /^(FLAT|SLIGHT|MODERATE|SHARP|HAIRPIN)\s+[LR]\s+\d+deg$/i;
+      const autoPattern = /^(?:[LR][1-6]|(?:FLAT|SLIGHT|MODERATE|SHARP|HAIRPIN)\s+[LR])(?:\s+\d+deg)?$/i;
       const label = autoPattern.test(name) ? '' : name;
-      detectedTurns.push({ lat, lon, angle, direction, sharpness, label, idx: 0 });
+      detectedTurns.push({ lat, lon, angle, direction, grade, label, idx: 0 });
     });
   }
 

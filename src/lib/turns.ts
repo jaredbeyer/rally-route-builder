@@ -20,12 +20,14 @@ export function smoothPoints(points: RoutePoint[], win: number): RoutePoint[] {
 export function classifySharpness(
   angle: number,
   thresholds: RouteSettings['thresholds']
-): DetectedTurn['sharpness'] {
-  if (angle < thresholds.flat) return 'flat';
-  if (angle < thresholds.slight) return 'slight';
-  if (angle < thresholds.moderate) return 'moderate';
-  if (angle < thresholds.sharp) return 'sharp';
-  return 'hairpin';
+): DetectedTurn['grade'] {
+  // 6 = wide sweeper … 1 = 180° hairpin
+  if (angle < thresholds[6]) return 6;
+  if (angle < thresholds[5]) return 5;
+  if (angle < thresholds[4]) return 4;
+  if (angle < thresholds[3]) return 3;
+  if (angle < thresholds[2]) return 2;
+  return 1;
 }
 
 export function detectTurns(points: RoutePoint[], settings: RouteSettings): DetectedTurn[] {
@@ -71,7 +73,7 @@ export function detectTurns(points: RoutePoint[], settings: RouteSettings): Dete
           lon: points[midIdx].lon,
           angle: Math.abs(cumAngle),
           direction: cumAngle > 0 ? 'right' : 'left',
-          sharpness: classifySharpness(Math.abs(cumAngle), settings.thresholds),
+          grade: classifySharpness(Math.abs(cumAngle), settings.thresholds),
           idx: midIdx,
         });
         i = j + 2;

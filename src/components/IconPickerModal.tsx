@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { Waypoint, DetectedTurn, MileMarker } from '@/lib/types';
-import { WAYPOINT_ICONS, MILE_MARKER_ICONS } from '@/lib/types';
+import type { Waypoint, DetectedTurn, MileMarker, TurnGrade } from '@/lib/types';
+import { WAYPOINT_ICONS, MILE_MARKER_ICONS, TURN_GRADES, TURN_GRADE_META, turnCode } from '@/lib/types';
 
 type ModalMode = 'edit' | 'add' | 'addAtCoords' | 'editTurn' | 'editMileMarker';
 
@@ -40,7 +40,7 @@ export default function IconPickerModal({
   const [lon, setLon] = useState('');
   const [icon, setIcon] = useState('📍');
   const [turnDir, setTurnDir] = useState<'left' | 'right'>('left');
-  const [sharpness, setSharpness] = useState<DetectedTurn['sharpness']>('moderate');
+  const [grade, setGrade] = useState<TurnGrade>(3);
   const [angle, setAngle] = useState('90');
 
   useEffect(() => {
@@ -63,7 +63,7 @@ export default function IconPickerModal({
       setLat(turn.lat.toFixed(6));
       setLon(turn.lon.toFixed(6));
       setTurnDir(turn.direction);
-      setSharpness(turn.sharpness);
+      setGrade(turn.grade);
       setAngle(turn.angle.toFixed(0));
     } else if (mode === 'editMileMarker' && mileMarker) {
       setName(mileMarker.customLabel || mileMarker.label);
@@ -84,7 +84,7 @@ export default function IconPickerModal({
         ...turn,
         label: name || '',
         direction: turnDir,
-        sharpness,
+        grade,
         angle: parseFloat(angle) || turn.angle,
         lat: parseFloat(lat) || turn.lat,
         lon: parseFloat(lon) || turn.lon,
@@ -232,15 +232,15 @@ export default function IconPickerModal({
               </div>
             </div>
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>Sharpness</label>
-              <select value={sharpness} onChange={(e) => setSharpness(e.target.value as DetectedTurn['sharpness'])}
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>Corner Grade</label>
+              <select value={grade} onChange={(e) => setGrade(Number(e.target.value) as TurnGrade)}
                 style={{ width: '100%', background: 'var(--bg)', border: '1px solid #444', color: 'var(--text)', padding: '6px 8px', borderRadius: 4, fontSize: '0.85rem' }}
               >
-                <option value="flat">Flat (gentle curve)</option>
-                <option value="slight">Slight</option>
-                <option value="moderate">Moderate</option>
-                <option value="sharp">Sharp</option>
-                <option value="hairpin">Hairpin</option>
+                {TURN_GRADES.map((g) => (
+                  <option key={g} value={g}>
+                    {turnCode(turnDir, g)} — {TURN_GRADE_META[g].hint}
+                  </option>
+                ))}
               </select>
             </div>
             <div style={{ marginBottom: 12 }}>
