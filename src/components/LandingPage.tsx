@@ -73,7 +73,7 @@ export default function LandingPage() {
           <span style={{ color: 'var(--accent)' }}>Rally</span> Route Builder
         </h1>
         <p style={{ color: 'var(--text-dim)', marginBottom: 32, lineHeight: 1.6 }}>
-          Decode GPX & KML files, auto-detect turns with rally-style pace notes,
+          Decode GPX & KML files, auto-detect turns as L1–L6 / R1–R6 pace notes,
           drop mile markers, manage waypoints, and export annotated routes for offroad racing.
         </p>
 

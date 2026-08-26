@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { Project, RoutePoint, DetectedTurn, MileMarker, Waypoint, RouteSettings } from '@/lib/types';
-import { DEFAULT_SETTINGS, TURN_COLORS } from '@/lib/types';
+import { DEFAULT_SETTINGS, TURN_GRADE_META, formatTurnLabel, normalizeSettings, normalizeTurn, turnCode, turnColor } from '@/lib/types';
 import { detectTurns } from '@/lib/turns';
 import { calculateMileMarkers } from '@/lib/miles';
 import { parseGPX, parseKML } from '@/lib/parsers';
@@ -24,10 +24,12 @@ export default function MapEditor({ project }: MapEditorProps) {
 
   // Route data state
   const [routePoints, setRoutePoints] = useState<RoutePoint[]>(project.route_points || []);
-  const [detectedTurns, setDetectedTurns] = useState<DetectedTurn[]>(project.detected_turns || []);
+  const [detectedTurns, setDetectedTurns] = useState<DetectedTurn[]>(
+    () => (project.detected_turns || []).map(normalizeTurn)
+  );
   const [mileMarkers, setMileMarkers] = useState<MileMarker[]>(project.mile_markers || []);
   const [waypoints, setWaypoints] = useState<Waypoint[]>(project.waypoints || []);
-  const [settings, setSettings] = useState<RouteSettings>(project.settings || DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<RouteSettings>(() => normalizeSettings(project.settings || DEFAULT_SETTINGS));
   const [fileName, setFileName] = useState<string | null>(project.original_file_name || null);
 
   // UI state
@@ -114,17 +116,18 @@ export default function MapEditor({ project }: MapEditorProps) {
 
     // Turn markers
     detectedTurns.forEach((turn, tidx) => {
-      const color = TURN_COLORS[turn.sharpness];
-      const arrowChar = turn.direction === 'left' ? '↰' : '↱';
+      const color = turnColor(turn.grade);
+      const code = turnCode(turn.direction, turn.grade);
       const borderStyle = liveEditMode ? '2px dashed #ff0' : '2px solid #fff';
       const icon = L.divIcon({
         className: '',
-        html: `<div style="background:${color};color:#fff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:bold;border:${borderStyle};box-shadow:0 1px 6px rgba(0,0,0,0.5);line-height:1;cursor:${liveEditMode ? 'grab' : 'pointer'};">${arrowChar}</div>`,
-        iconSize: [26, 26], iconAnchor: [13, 13],
+        html: `<div style="background:${color};color:#fff;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;letter-spacing:-0.3px;border:${borderStyle};box-shadow:0 1px 6px rgba(0,0,0,0.5);line-height:1;cursor:${liveEditMode ? 'grab' : 'pointer'};">${code}</div>`,
+        iconSize: [32, 32], iconAnchor: [16, 16],
       });
-      const turnLabel = turn.label || `${turn.sharpness.toUpperCase()} ${turn.direction.toUpperCase()}`;
+      const turnLabel = formatTurnLabel(turn);
+      const gradeHint = TURN_GRADE_META[turn.grade].hint;
       const m = L.marker([turn.lat, turn.lon], { icon, draggable: liveEditMode }).addTo(map);
-      m.bindPopup(`<b>${turnLabel}</b><br>Angle: ${turn.angle.toFixed(1)}°<br><small>${turn.sharpness} ${turn.direction}</small><div style="display:flex;gap:4px;margin-top:8px;"><button class="popup-btn popup-btn-edit" data-turn="${tidx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#3498db;color:#fff;">✏️ Edit</button><button class="popup-btn popup-btn-del" data-turndelete="${tidx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#e94560;color:#fff;">🗑 Remove</button></div>`);
+      m.bindPopup(`<b>${turnLabel}</b><br>Angle: ${turn.angle.toFixed(1)}°<br><small>${code} · ${gradeHint}</small><div style="display:flex;gap:4px;margin-top:8px;"><button class="popup-btn popup-btn-edit" data-turn="${tidx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#3498db;color:#fff;">✏️ Edit</button><button class="popup-btn popup-btn-del" data-turndelete="${tidx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#e94560;color:#fff;">🗑 Remove</button></div>`);
       if (liveEditMode) {
         m.on('dragend', (e: L.DragEndEvent) => {
           const pos = (e.target as L.Marker).getLatLng();
@@ -278,7 +281,7 @@ export default function MapEditor({ project }: MapEditorProps) {
     setFileName(name);
 
     if (result.isReimport && result.detectedTurns.length > 0) {
-      setDetectedTurns(result.detectedTurns);
+      setDetectedTurns(result.detectedTurns.map(normalizeTurn));
     } else {
       setDetectedTurns(detectTurns(result.routePoints, settings));
     }
@@ -296,7 +299,11 @@ export default function MapEditor({ project }: MapEditorProps) {
   };
 
   const handleSettingsChange = (partial: Partial<RouteSettings>) => {
-    setSettings((prev) => ({ ...prev, ...partial }));
+    setSettings((prev) => ({
+      ...prev,
+      ...partial,
+      thresholds: partial.thresholds ? { ...prev.thresholds, ...partial.thresholds } : prev.thresholds,
+    }));
   };
 
   const handleReprocessTurns = () => {
@@ -358,7 +365,7 @@ export default function MapEditor({ project }: MapEditorProps) {
   };
 
   const handleSaveTurn = (turn: DetectedTurn, index: number) => {
-    setDetectedTurns((prev) => { const next = [...prev]; next[index] = turn; return next; });
+    setDetectedTurns((prev) => { const next = [...prev]; next[index] = normalizeTurn(turn); return next; });
   };
 
   const handleDeleteTurn = (index: number) => {

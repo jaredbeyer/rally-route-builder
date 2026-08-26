@@ -1,7 +1,7 @@
 'use client';
 
 import type { DetectedTurn } from '@/lib/types';
-import { TURN_COLORS } from '@/lib/types';
+import { formatTurnLabel, turnColor } from '@/lib/types';
 
 interface TurnListProps {
   turns: DetectedTurn[];
@@ -18,9 +18,8 @@ export default function TurnList({ turns, onZoom, onEdit, onDelete }: TurnListPr
   return (
     <div style={{ maxHeight: 200, overflowY: 'auto', marginTop: 8 }}>
       {turns.map((t, i) => {
-        const arrow = t.direction === 'left' ? '←' : '→';
-        const color = TURN_COLORS[t.sharpness];
-        const label = t.label || `${arrow} ${t.sharpness} ${t.angle.toFixed(0)}°`;
+        const color = turnColor(t.grade);
+        const label = formatTurnLabel(t, { withAngle: true });
 
         return (
           <div

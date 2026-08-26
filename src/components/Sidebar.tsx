@@ -2,7 +2,8 @@
 
 import { useRef } from 'react';
 import type { RoutePoint, DetectedTurn, MileMarker, Waypoint, RouteSettings } from '@/lib/types';
-import { TURN_COLORS } from '@/lib/types';
+import { TURN_COLORS, TURN_GRADE_META, TURN_GRADES } from '@/lib/types';
+import type { TurnGrade } from '@/lib/types';
 import { totalDistance } from '@/lib/geo';
 import TurnList from './TurnList';
 import WaypointList from './WaypointList';
@@ -151,25 +152,20 @@ export default function Sidebar(props: SidebarProps) {
 
           {/* Thresholds */}
           <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 1, color: 'var(--accent)', marginBottom: 6, fontWeight: 600 }}>Sharpness Thresholds</div>
-            {[
-              { key: 'flat' as const, color: '#4ecdc4', label: 'Flat <' },
-              { key: 'slight' as const, color: '#f5a623', label: 'Slight <' },
-              { key: 'moderate' as const, color: '#e8751a', label: 'Moderate <' },
-              { key: 'sharp' as const, color: '#e94560', label: 'Sharp <' },
-            ].map(({ key, color, label }) => (
+            <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 1, color: 'var(--accent)', marginBottom: 6, fontWeight: 600 }}>Corner Grades (L/R)</div>
+            {([6, 5, 4, 3, 2] as const).map((key) => (
               <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: '0.78rem' }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                <span style={{ color: 'var(--text-dim)' }}>{label}</span>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: TURN_COLORS[key], flexShrink: 0 }} />
+                <span style={{ color: 'var(--text-dim)', minWidth: 72 }}>L{key}/R{key} &lt;</span>
                 <input type="number" value={settings.thresholds[key]} min={5} max={180}
                   onChange={(e) => onSettingsChange({ thresholds: { ...settings.thresholds, [key]: parseFloat(e.target.value) || settings.thresholds[key] } })}
                   style={{ width: 50, background: 'var(--bg)', border: '1px solid #444', color: 'var(--text)', padding: '3px 6px', borderRadius: 3, fontSize: '0.78rem', textAlign: 'center' }} />
-                <span style={{ color: 'var(--text-dim)' }}>°</span>
+                <span style={{ color: 'var(--text-dim)' }}>° {TURN_GRADE_META[key].short}</span>
               </div>
             ))}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: '0.78rem' }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#9b59b6', flexShrink: 0 }} />
-              <span style={{ color: 'var(--text-dim)' }}>Hairpin ≥ {settings.thresholds.sharp}°</span>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: TURN_COLORS[1], flexShrink: 0 }} />
+              <span style={{ color: 'var(--text-dim)' }}>L1/R1 ≥ {settings.thresholds[2]}° {TURN_GRADE_META[1].short}</span>
             </div>
           </div>
 
@@ -185,10 +181,10 @@ export default function Sidebar(props: SidebarProps) {
 
           <div style={{ marginTop: 10 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-              {Object.entries(TURN_COLORS).map(([name, color]) => (
-                <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', padding: '4px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.03)' }}>
-                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                  {name.charAt(0).toUpperCase() + name.slice(1)}
+              {TURN_GRADES.map((grade: TurnGrade) => (
+                <div key={grade} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', padding: '4px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.03)' }}>
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: TURN_COLORS[grade], flexShrink: 0 }} />
+                  L{grade}/R{grade} {TURN_GRADE_META[grade].short}
                 </div>
               ))}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', padding: '4px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.03)' }}>

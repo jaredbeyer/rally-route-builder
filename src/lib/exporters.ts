@@ -1,4 +1,5 @@
 import type { RoutePoint, DetectedTurn, MileMarker, Waypoint } from './types';
+import { TURN_GRADES, turnCode } from './types';
 
 function escXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -16,9 +17,9 @@ export function exportGPX(
 `;
 
   detectedTurns.forEach((turn, i) => {
-    const arrow = turn.direction === 'left' ? 'L' : 'R';
-    const label = turn.label || `${turn.sharpness.toUpperCase()} ${arrow} ${turn.angle.toFixed(0)}deg`;
-    gpx += `  <wpt lat="${turn.lat}" lon="${turn.lon}"><name>${escXml(label)}</name><desc>Turn ${i + 1}: ${turn.sharpness} ${turn.direction} at ${turn.angle.toFixed(1)} degrees</desc><sym>${turn.sharpness}_${turn.direction}</sym><type>turn</type></wpt>\n`;
+    const code = turnCode(turn.direction, turn.grade);
+    const label = turn.label || `${code} ${turn.angle.toFixed(0)}deg`;
+    gpx += `  <wpt lat="${turn.lat}" lon="${turn.lon}"><name>${escXml(label)}</name><desc>Turn ${i + 1}: ${code} ${turn.direction} at ${turn.angle.toFixed(1)} degrees</desc><sym>${turn.grade}_${turn.direction}</sym><type>turn</type></wpt>\n`;
   });
 
   mileMarkers.forEach((mm) => {
@@ -49,11 +50,12 @@ export function exportKML(
   waypoints: Waypoint[]
 ): string {
   const kmlColors: Record<string, string> = {
-    flat: 'ffc4cd4e',
-    slight: 'ff23a6f5',
-    moderate: 'ff1a75e8',
-    sharp: 'ff6045e9',
-    hairpin: 'ffb6599b',
+    1: 'ffb6599b',
+    2: 'ff6045e9',
+    3: 'ff1a75e8',
+    4: 'ff23a6f5',
+    5: 'ff4ca8c9',
+    6: 'ffc4cd4e',
   };
 
   let kml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -64,17 +66,18 @@ export function exportKML(
   <Style id="mile_marker"><IconStyle><color>ffff9900</color><scale>0.8</scale><Icon><href>https://maps.google.com/mapfiles/kml/paddle/blu-blank.png</href></Icon></IconStyle></Style>
 `;
 
-  Object.entries(kmlColors).forEach(([name, color]) => {
+  TURN_GRADES.forEach((grade) => {
+    const color = kmlColors[String(grade)];
     ['left', 'right'].forEach((dir) => {
-      kml += `  <Style id="${name}_${dir}"><IconStyle><color>${color}</color><scale>1.0</scale><Icon><href>https://maps.google.com/mapfiles/kml/shapes/arrow.png</href></Icon></IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>\n`;
+      kml += `  <Style id="${grade}_${dir}"><IconStyle><color>${color}</color><scale>1.0</scale><Icon><href>https://maps.google.com/mapfiles/kml/shapes/arrow.png</href></Icon></IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>\n`;
     });
   });
 
   kml += `  <Folder><name>Turns</name>\n`;
   detectedTurns.forEach((turn, i) => {
-    const arrow = turn.direction === 'left' ? 'L' : 'R';
-    const label = turn.label || `${turn.sharpness.toUpperCase()} ${arrow} ${turn.angle.toFixed(0)}deg`;
-    kml += `    <Placemark><name>${escXml(label)}</name><description>Turn ${i + 1}: ${turn.sharpness} ${turn.direction}</description><styleUrl>#${turn.sharpness}_${turn.direction}</styleUrl><Point><coordinates>${turn.lon},${turn.lat},0</coordinates></Point></Placemark>\n`;
+    const code = turnCode(turn.direction, turn.grade);
+    const label = turn.label || `${code} ${turn.angle.toFixed(0)}deg`;
+    kml += `    <Placemark><name>${escXml(label)}</name><description>Turn ${i + 1}: ${code} ${turn.direction}</description><styleUrl>#${turn.grade}_${turn.direction}</styleUrl><Point><coordinates>${turn.lon},${turn.lat},0</coordinates></Point></Placemark>\n`;
   });
 
   kml += `  </Folder>\n  <Folder><name>Mile Markers</name>\n`;
