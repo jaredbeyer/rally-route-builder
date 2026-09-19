@@ -150,6 +150,14 @@ export default function Sidebar(props: SidebarProps) {
             <label style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>°</label>
           </div>
 
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <label style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>Warn before</label>
+            <input type="number" value={settings.warnBeforeMeters} min={0} max={200}
+              onChange={(e) => onSettingsChange({ warnBeforeMeters: parseFloat(e.target.value) || 0 })}
+              style={{ width: 70, background: 'var(--bg)', border: '1px solid #444', color: 'var(--text)', padding: '6px 8px', borderRadius: 4, fontSize: '0.9rem' }} />
+            <label style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>m</label>
+          </div>
+
           {/* Thresholds */}
           <div style={{ marginTop: 10 }}>
             <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 1, color: 'var(--accent)', marginBottom: 6, fontWeight: 600 }}>Corner Grades (L/R)</div>

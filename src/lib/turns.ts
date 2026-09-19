@@ -1,5 +1,5 @@
 import type { RoutePoint, DetectedTurn, RouteSettings } from './types';
-import { bearing } from './geo';
+import { bearing, pointBefore } from './geo';
 
 export function smoothPoints(points: RoutePoint[], win: number): RoutePoint[] {
   if (win <= 1) return points;
@@ -49,8 +49,6 @@ export function detectTurns(points: RoutePoint[], settings: RouteSettings): Dete
     if (Math.abs(diff) >= settings.minTurnAngle * 0.5) {
       const startIdx = i;
       let cumAngle = cumAngleInit;
-      let maxCumAbs = Math.abs(cumAngle);
-      let maxCumIdx = i;
       let j = i + 1;
 
       while (j < bearings.length) {
@@ -59,22 +57,22 @@ export function detectTurns(points: RoutePoint[], settings: RouteSettings): Dete
         if (d < -180) d += 360;
         if (Math.sign(d) !== Math.sign(cumAngle) || Math.abs(d) < 2) break;
         cumAngle += d;
-        if (Math.abs(cumAngle) > maxCumAbs) {
-          maxCumAbs = Math.abs(cumAngle);
-          maxCumIdx = j;
-        }
         j++;
       }
 
       if (Math.abs(cumAngle) >= settings.minTurnAngle) {
-        const midIdx = Math.min(Math.round((startIdx + maxCumIdx) / 2), points.length - 1);
+        const entryIdx = Math.min(startIdx, points.length - 1);
+        const minIdx = turns.length ? (turns[turns.length - 1].idx ?? 0) + 1 : 0;
+        const placed = pointBefore(points, entryIdx, settings.warnBeforeMeters ?? 50);
+        const idx = Math.max(placed.idx, minIdx);
+        const at = idx === placed.idx ? placed : points[Math.min(idx, points.length - 1)];
         turns.push({
-          lat: points[midIdx].lat,
-          lon: points[midIdx].lon,
+          lat: at.lat,
+          lon: at.lon,
           angle: Math.abs(cumAngle),
           direction: cumAngle > 0 ? 'right' : 'left',
           grade: classifySharpness(Math.abs(cumAngle), settings.thresholds),
-          idx: midIdx,
+          idx,
         });
         i = j + 2;
         continue;

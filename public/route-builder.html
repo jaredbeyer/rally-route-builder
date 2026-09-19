@@ -254,6 +254,11 @@
         <input type="number" id="minTurnAngle" value="20" min="5" max="90" />
         <label class="control-label" style="margin:0;">°</label>
       </div>
+      <div class="control-row">
+        <label class="control-label" style="margin:0;">Warn before</label>
+        <input type="number" id="warnBefore" value="50" min="0" max="200" title="Metres before the corner to plant the label" />
+        <label class="control-label" style="margin:0;">m</label>
+      </div>
 
       <div class="angle-thresholds">
         <div class="section-title" style="font-size:0.7rem; margin-bottom:6px;">Corner Grades — 1 = 180°, 6 = sweeper</div>
@@ -816,6 +821,23 @@ function interpolate(p1, p2, fraction) {
   return { lat: p1.lat + (p2.lat - p1.lat) * fraction, lon: p1.lon + (p2.lon - p1.lon) * fraction };
 }
 
+function pointBefore(points, idx, meters) {
+  if (!points.length) return { lat: 0, lon: 0, idx: 0 };
+  let i = Math.min(Math.max(Math.round(idx), 0), points.length - 1);
+  let remaining = Math.max(0, meters);
+  while (i > 0 && remaining > 0) {
+    const seg = haversine(points[i - 1], points[i]);
+    if (seg <= 0) { i--; continue; }
+    if (seg >= remaining) {
+      const pos = interpolate(points[i], points[i - 1], remaining / seg);
+      return { lat: pos.lat, lon: pos.lon, idx: i - 1 };
+    }
+    remaining -= seg;
+    i--;
+  }
+  return { lat: points[0].lat, lon: points[0].lon, idx: 0 };
+}
+
 function totalDistance(points) {
   let d = 0;
   for (let i = 1; i < points.length; i++) d += haversine(points[i-1], points[i]);
@@ -853,7 +875,7 @@ function detectTurns(points) {
     let cumAngle = diff;
 
     if (Math.abs(diff) >= minAngle * 0.5) {
-      let startIdx = i, maxCumAbs = Math.abs(cumAngle), maxCumIdx = i;
+      let startIdx = i;
       let j = i + 1;
       while (j < bearings.length) {
         let d = bearings[j] - bearings[j-1];
@@ -861,17 +883,21 @@ function detectTurns(points) {
         if (d < -180) d += 360;
         if (Math.sign(d) !== Math.sign(cumAngle) || Math.abs(d) < 2) break;
         cumAngle += d;
-        if (Math.abs(cumAngle) > maxCumAbs) { maxCumAbs = Math.abs(cumAngle); maxCumIdx = j; }
         j++;
       }
       if (Math.abs(cumAngle) >= minAngle) {
-        const midIdx = Math.min(Math.round((startIdx + maxCumIdx) / 2), points.length - 1);
+        const lead = parseFloat(document.getElementById('warnBefore').value);
+        const entryIdx = Math.min(startIdx, points.length - 1);
+        const minIdx = turns.length ? (turns[turns.length - 1].idx || 0) + 1 : 0;
+        const placed = pointBefore(points, entryIdx, Number.isFinite(lead) ? lead : 50);
+        const idx = Math.max(placed.idx, minIdx);
+        const at = idx === placed.idx ? placed : points[Math.min(idx, points.length - 1)];
         turns.push({
-          lat: points[midIdx].lat, lon: points[midIdx].lon,
+          lat: at.lat, lon: at.lon,
           angle: Math.abs(cumAngle),
           direction: cumAngle > 0 ? 'right' : 'left',
           sharpness: classifySharpness(Math.abs(cumAngle)),
-          idx: midIdx
+          idx
         });
         i = j + 2; continue;
       }
