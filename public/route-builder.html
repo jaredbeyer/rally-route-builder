@@ -312,11 +312,13 @@
         <button class="btn btn-secondary btn-sm" onclick="toggleAllWaypoints(true)" style="flex:1;">✓ All On</button>
         <button class="btn btn-secondary btn-sm" onclick="toggleAllWaypoints(false)" style="flex:1;">✕ All Off</button>
         <button class="btn btn-secondary btn-sm" onclick="addCustomWaypoint()" style="flex:1;" title="Add a waypoint manually">+ Add</button>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('marksInput').click()" style="flex:1;" title="Add marks from a GPX/KML without replacing the route">Import Marks</button>
       </div>
+      <input type="file" id="marksInput" accept=".gpx,.kml" style="display:none;" />
       <div class="wp-list" id="wpList"></div>
       <div id="noWaypoints" class="empty-state hidden">
         <div class="icon">📌</div>
-        <p>No waypoints yet — click the map or press "+ Add"</p>
+        <p>No waypoints yet — click the map, press "+ Add", or Import Marks</p>
       </div>
     </div>
 
@@ -613,6 +615,10 @@ dropZone.addEventListener('drop', (e) => {
   if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
 });
 fileInput.addEventListener('change', (e) => { if (e.target.files.length) handleFile(e.target.files[0]); });
+document.getElementById('marksInput').addEventListener('change', (e) => {
+  if (e.target.files.length) handleMarksFile(e.target.files[0]);
+  e.target.value = '';
+});
 
 function handleFile(file) {
   const ext = file.name.split('.').pop().toLowerCase();
@@ -623,6 +629,89 @@ function handleFile(file) {
     const xml = parser.parseFromString(e.target.result, 'text/xml');
     if (ext === 'gpx') parseGPX(xml, file.name);
     else parseKML(xml, file.name);
+  };
+  reader.readAsText(file);
+}
+
+function waypointIconFromSym(sym, cmt) {
+  if (cmt && /\p{Emoji}/u.test(cmt)) return cmt;
+  if (sym && /\p{Emoji}/u.test(sym)) return sym;
+  const key = (sym || '').trim().toLowerCase();
+  if (key) {
+    for (const [emoji, name] of Object.entries(EMOJI_TO_GARMIN)) {
+      if (name.toLowerCase() === key) return emoji;
+    }
+  }
+  return '📍';
+}
+
+function extractMarksFromGPX(xml) {
+  const marks = [];
+  xml.querySelectorAll('wpt').forEach(wpt => {
+    const type = wpt.querySelector('type') ? wpt.querySelector('type').textContent : '';
+    if (type === 'turn' || type === 'mile_marker') return;
+    const lat = parseFloat(wpt.getAttribute('lat'));
+    const lon = parseFloat(wpt.getAttribute('lon'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    const name = wpt.querySelector('name') ? wpt.querySelector('name').textContent : 'Unnamed';
+    const desc = wpt.querySelector('desc') ? wpt.querySelector('desc').textContent : '';
+    const sym = wpt.querySelector('sym') ? wpt.querySelector('sym').textContent : '';
+    const cmt = wpt.querySelector('cmt') ? wpt.querySelector('cmt').textContent : '';
+    marks.push({
+      name, lat, lon,
+      ele: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele').textContent) : null,
+      desc, icon: waypointIconFromSym(sym, cmt), enabled: true
+    });
+  });
+  return marks;
+}
+
+function extractMarksFromKML(xml) {
+  const marks = [];
+  const folders = xml.querySelectorAll('Folder');
+  const folderMap = {};
+  folders.forEach(f => {
+    const nameEl = f.querySelector(':scope > name');
+    if (nameEl) folderMap[nameEl.textContent.trim()] = f;
+  });
+  const addPlacemark = (pm) => {
+    const point = pm.querySelector('Point coordinates') || (pm.querySelector('Point') && pm.querySelector('Point').querySelector('coordinates'));
+    if (!point) return;
+    const parts = point.textContent.trim().split(',');
+    const rawName = pm.querySelector('name') ? pm.querySelector('name').textContent : 'Unnamed';
+    const desc = pm.querySelector('description') ? pm.querySelector('description').textContent : '';
+    const emojiMatch = rawName.match(/^(\p{Emoji})\s*(.*)/u);
+    const icon = emojiMatch ? emojiMatch[1] : '📍';
+    const name = emojiMatch ? (emojiMatch[2] || 'Unnamed') : rawName;
+    marks.push({ name, lat: parseFloat(parts[1]), lon: parseFloat(parts[0]), ele: parts[2] ? parseFloat(parts[2]) : null, desc, icon, enabled: true });
+  };
+  if (folderMap['Turns'] || folderMap['Mile Markers'] || folderMap['Waypoints']) {
+    if (folderMap['Waypoints']) folderMap['Waypoints'].querySelectorAll('Placemark').forEach(addPlacemark);
+  } else {
+    xml.querySelectorAll('Placemark').forEach(pm => { if (pm.querySelector('Point')) addPlacemark(pm); });
+  }
+  return marks;
+}
+
+function handleMarksFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['gpx','kml'].includes(ext)) { alert('Please load a .gpx or .kml file'); return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(e.target.result, 'text/xml');
+    const incoming = ext === 'kml' ? extractMarksFromKML(xml) : extractMarksFromGPX(xml);
+    if (!incoming.length) { alert('No marks/waypoints found in that file.'); return; }
+    let added = 0, skipped = 0;
+    incoming.forEach(wp => {
+      const dup = waypoints.some(ex => haversine(ex, wp) < 15);
+      if (dup) { skipped++; return; }
+      waypoints.push(wp);
+      added++;
+    });
+    updateStats(); buildWaypointList(); renderMap();
+    const skip = skipped ? ` (${skipped} already on the map)` : '';
+    alert(`Added ${added} mark${added === 1 ? '' : 's'} from ${file.name}${skip}.`);
   };
   reader.readAsText(file);
 }

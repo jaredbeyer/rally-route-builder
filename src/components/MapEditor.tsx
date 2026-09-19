@@ -5,7 +5,7 @@ import type { Project, RoutePoint, DetectedTurn, MileMarker, Waypoint, RouteSett
 import { DEFAULT_SETTINGS, TURN_GRADE_META, formatTurnLabel, normalizeSettings, normalizeTurn, turnCode, turnColor } from '@/lib/types';
 import { detectTurns } from '@/lib/turns';
 import { calculateMileMarkers } from '@/lib/miles';
-import { parseGPX, parseKML } from '@/lib/parsers';
+import { parseGPX, parseKML, parseMarksOnly, mergeWaypoints } from '@/lib/parsers';
 import { exportGPX, exportKML, downloadFile } from '@/lib/exporters';
 import Sidebar from './Sidebar';
 import IconPickerModal from './IconPickerModal';
@@ -293,6 +293,18 @@ export default function MapEditor({ project }: MapEditorProps) {
     }
   };
 
+  const handleImportMarks = (content: string, name: string) => {
+    const incoming = parseMarksOnly(content, name);
+    if (!incoming.length) {
+      alert('No marks/waypoints found in that file.');
+      return;
+    }
+    const result = mergeWaypoints(waypoints, incoming);
+    setWaypoints(result.waypoints);
+    const skip = result.skipped ? ` (${result.skipped} already on the map)` : '';
+    alert(`Added ${result.added} mark${result.added === 1 ? '' : 's'} from ${name}${skip}.`);
+  };
+
   const handleResetFile = () => {
     setRoutePoints([]); setDetectedTurns([]); setMileMarkers([]); setWaypoints([]);
     setFileName(null); setPinMode(false); setDeleteMode(false); setLiveEditMode(false);
@@ -416,6 +428,7 @@ export default function MapEditor({ project }: MapEditorProps) {
         onZoomWaypoint={(idx) => { const w = waypoints[idx]; if (w) zoomTo(w.lat, w.lon); }}
         onToggleAllWaypoints={(on) => setWaypoints((prev) => prev.map((w) => ({ ...w, enabled: on })))}
         onAddWaypoint={() => { setModalMode('add'); setEditIndex(null); setModalOpen(true); }}
+        onImportMarks={handleImportMarks}
         onEditMileMarker={(idx) => { setModalMode('editMileMarker'); setEditIndex(idx); setModalOpen(true); }}
         onDeleteMileMarker={(idx) => setMileMarkers((prev) => prev.filter((_, i) => i !== idx))}
         onZoomMileMarker={(idx) => { const m = mileMarkers[idx]; if (m) zoomTo(m.lat, m.lon); }}

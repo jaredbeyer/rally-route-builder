@@ -34,6 +34,7 @@ interface SidebarProps {
   onZoomWaypoint: (idx: number) => void;
   onToggleAllWaypoints: (on: boolean) => void;
   onAddWaypoint: () => void;
+  onImportMarks: (content: string, name: string) => void;
   onEditMileMarker: (idx: number) => void;
   onDeleteMileMarker: (idx: number) => void;
   onZoomMileMarker: (idx: number) => void;
@@ -48,12 +49,13 @@ export default function Sidebar(props: SidebarProps) {
     onFileLoad, onResetFile, onSettingsChange, onReprocessTurns, onForceRedetect,
     onReprocessMiles, onEditTurn, onDeleteTurn, onZoomTurn,
     onEditWaypoint, onToggleWaypoint, onDeleteWaypoint, onZoomWaypoint,
-    onToggleAllWaypoints, onAddWaypoint,
+    onToggleAllWaypoints, onAddWaypoint, onImportMarks,
     onEditMileMarker, onDeleteMileMarker, onZoomMileMarker,
     onExportGPX, onExportKML, onSave,
   } = props;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const marksInputRef = useRef<HTMLInputElement>(null);
   const hasRoute = routePoints.length > 0;
 
   const handleFile = (file: File) => {
@@ -271,7 +273,31 @@ export default function Sidebar(props: SidebarProps) {
             <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => onToggleAllWaypoints(true)}>✓ All On</button>
             <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => onToggleAllWaypoints(false)}>✕ All Off</button>
             <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={onAddWaypoint} title="Add a waypoint manually">+ Add</button>
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ flex: 1 }}
+              onClick={() => marksInputRef.current?.click()}
+              title="Add marks from a GPX/KML without replacing the route"
+            >
+              Import Marks
+            </button>
           </div>
+          <input
+            ref={marksInputRef}
+            type="file"
+            accept=".gpx,.kml"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const ext = file.name.split('.').pop()?.toLowerCase();
+              if (!['gpx', 'kml'].includes(ext || '')) { alert('Please load a .gpx or .kml file'); return; }
+              const reader = new FileReader();
+              reader.onload = (ev) => onImportMarks(ev.target?.result as string, file.name);
+              reader.readAsText(file);
+              e.target.value = '';
+            }}
+          />
           <WaypointList waypoints={waypoints} onEdit={onEditWaypoint} onToggle={onToggleWaypoint} onDelete={onDeleteWaypoint} onZoom={onZoomWaypoint} />
         </div>
       )}

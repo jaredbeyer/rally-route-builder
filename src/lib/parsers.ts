@@ -1,6 +1,7 @@
 import type { RoutePoint, DetectedTurn, MileMarker, Waypoint } from './types';
 import { parseGrade } from './types';
 import { parseTurnWaypoint } from './garmin';
+import { haversine } from './geo';
 
 export interface ParseResult {
   routePoints: RoutePoint[];
@@ -206,4 +207,30 @@ export function parseKML(xmlString: string): ParseResult {
   }
 
   return { routePoints, detectedTurns, mileMarkers, waypoints, isReimport };
+}
+
+/** Read only marks/waypoints from a GPX or KML. Ignores track, turns, and mile markers. */
+export function parseMarksOnly(xmlString: string, filename: string): Waypoint[] {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  const result = ext === 'kml' ? parseKML(xmlString) : parseGPX(xmlString);
+  return result.waypoints;
+}
+
+export function mergeWaypoints(
+  existing: Waypoint[],
+  incoming: Waypoint[]
+): { waypoints: Waypoint[]; added: number; skipped: number } {
+  const waypoints = [...existing];
+  let added = 0;
+  let skipped = 0;
+  for (const wp of incoming) {
+    const dup = waypoints.some((e) => haversine(e, wp) < 15);
+    if (dup) {
+      skipped += 1;
+      continue;
+    }
+    waypoints.push(wp);
+    added += 1;
+  }
+  return { waypoints, added, skipped };
 }
