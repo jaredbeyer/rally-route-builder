@@ -256,8 +256,8 @@
       </div>
       <div class="control-row">
         <label class="control-label" style="margin:0;">Warn before</label>
-        <input type="number" id="warnBefore" value="50" min="0" max="200" title="Metres before the corner to plant the label" />
-        <label class="control-label" style="margin:0;">m</label>
+        <input type="number" id="warnBefore" value="165" min="0" max="650" title="Feet before the corner to plant the label" />
+        <label class="control-label" style="margin:0;">ft</label>
       </div>
 
       <div class="angle-thresholds">
@@ -886,10 +886,11 @@ function detectTurns(points) {
         j++;
       }
       if (Math.abs(cumAngle) >= minAngle) {
-        const lead = parseFloat(document.getElementById('warnBefore').value);
+        const leadFt = parseFloat(document.getElementById('warnBefore').value);
+        const leadM = (Number.isFinite(leadFt) ? leadFt : 165) * 0.3048;
         const entryIdx = Math.min(startIdx, points.length - 1);
         const minIdx = turns.length ? (turns[turns.length - 1].idx || 0) + 1 : 0;
-        const placed = pointBefore(points, entryIdx, Number.isFinite(lead) ? lead : 50);
+        const placed = pointBefore(points, entryIdx, leadM);
         const idx = Math.max(placed.idx, minIdx);
         const at = idx === placed.idx ? placed : points[Math.min(idx, points.length - 1)];
         turns.push({

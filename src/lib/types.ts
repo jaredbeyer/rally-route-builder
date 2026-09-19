@@ -51,8 +51,8 @@ export interface GradeThresholds {
 export interface RouteSettings {
   smoothWindow: number;
   minTurnAngle: number;
-  /** Metres before corner entry to plant the waypoint (pace-note call). */
-  warnBeforeMeters: number;
+  /** Feet before corner entry to plant the waypoint (pace-note call). */
+  warnBeforeFeet: number;
   thresholds: GradeThresholds;
   mileInterval: number;
   mileUnit: 'miles' | 'km';
@@ -85,7 +85,7 @@ export interface Project {
 export const DEFAULT_SETTINGS: RouteSettings = {
   smoothWindow: 5,
   minTurnAngle: 20,
-  warnBeforeMeters: 50,
+  warnBeforeFeet: 165,
   // L1=180°, L3=90°, L6=wide sweeper. Bands centered on those anchors.
   thresholds: { 6: 30, 5: 55, 4: 80, 3: 115, 2: 155 },
   mileInterval: 1,
@@ -189,7 +189,11 @@ export function normalizeSettings(settings?: Partial<RouteSettings> | null): Rou
   return {
     smoothWindow: incoming.smoothWindow ?? DEFAULT_SETTINGS.smoothWindow,
     minTurnAngle: incoming.minTurnAngle ?? DEFAULT_SETTINGS.minTurnAngle,
-    warnBeforeMeters: incoming.warnBeforeMeters ?? DEFAULT_SETTINGS.warnBeforeMeters,
+    warnBeforeFeet:
+      incoming.warnBeforeFeet ??
+      (typeof (incoming as { warnBeforeMeters?: number }).warnBeforeMeters === 'number'
+        ? Math.round((incoming as { warnBeforeMeters: number }).warnBeforeMeters * 3.28084)
+        : DEFAULT_SETTINGS.warnBeforeFeet),
     thresholds,
     mileInterval: incoming.mileInterval ?? DEFAULT_SETTINGS.mileInterval,
     mileUnit: incoming.mileUnit ?? DEFAULT_SETTINGS.mileUnit,

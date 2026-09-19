@@ -63,7 +63,7 @@ export function detectTurns(points: RoutePoint[], settings: RouteSettings): Dete
       if (Math.abs(cumAngle) >= settings.minTurnAngle) {
         const entryIdx = Math.min(startIdx, points.length - 1);
         const minIdx = turns.length ? (turns[turns.length - 1].idx ?? 0) + 1 : 0;
-        const placed = pointBefore(points, entryIdx, settings.warnBeforeMeters ?? 50);
+        const placed = pointBefore(points, entryIdx, (settings.warnBeforeFeet ?? 165) * 0.3048);
         const idx = Math.max(placed.idx, minIdx);
         const at = idx === placed.idx ? placed : points[Math.min(idx, points.length - 1)];
         turns.push({

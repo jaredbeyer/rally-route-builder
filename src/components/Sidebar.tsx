@@ -152,10 +152,10 @@ export default function Sidebar(props: SidebarProps) {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <label style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>Warn before</label>
-            <input type="number" value={settings.warnBeforeMeters} min={0} max={200}
-              onChange={(e) => onSettingsChange({ warnBeforeMeters: parseFloat(e.target.value) || 0 })}
+            <input type="number" value={settings.warnBeforeFeet} min={0} max={650}
+              onChange={(e) => onSettingsChange({ warnBeforeFeet: parseFloat(e.target.value) || 0 })}
               style={{ width: 70, background: 'var(--bg)', border: '1px solid #444', color: 'var(--text)', padding: '6px 8px', borderRadius: 4, fontSize: '0.9rem' }} />
-            <label style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>m</label>
+            <label style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>ft</label>
           </div>
 
           {/* Thresholds */}
