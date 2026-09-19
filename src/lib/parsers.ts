@@ -1,5 +1,6 @@
 import type { RoutePoint, DetectedTurn, MileMarker, Waypoint } from './types';
 import { parseGrade } from './types';
+import { parseTurnWaypoint } from './garmin';
 
 export interface ParseResult {
   routePoints: RoutePoint[];
@@ -39,22 +40,17 @@ export function parseGPX(xmlString: string): ParseResult {
     const name = wpt.querySelector('name')?.textContent || 'Unnamed';
     const desc = wpt.querySelector('desc')?.textContent || '';
     const sym = wpt.querySelector('sym')?.textContent || '';
+    const cmt = wpt.querySelector('cmt')?.textContent || '';
     const type = wpt.querySelector('type')?.textContent || '';
 
     if (type === 'turn') {
       isReimport = true;
-      const symParts = sym.split('_');
-      const grade = parseGrade(symParts[0]);
-      const direction: 'left' | 'right' = symParts[1] === 'right' ? 'right' : 'left';
-      const angleMatch = desc.match(/([\d.]+)\s*degrees/i);
-      const angle = angleMatch ? parseFloat(angleMatch[1]) : 90;
-      const autoPattern = /^(?:[LR][1-6]|(?:FLAT|SLIGHT|MODERATE|SHARP|HAIRPIN)\s+[LR])(?:\s+\d+deg)?$/i;
-      const label = autoPattern.test(name) ? '' : name;
-      detectedTurns.push({ lat, lon, angle, direction, grade, label, idx: 0 });
+      const parsed = parseTurnWaypoint(name, desc, sym, cmt);
+      detectedTurns.push({ lat, lon, ...parsed, idx: 0 });
     } else if (type === 'mile_marker') {
       isReimport = true;
-      // Restore custom icon from sym if it's an emoji (not "mile_marker")
-      const mmIcon = sym && sym !== 'mile_marker' && /\p{Emoji}/u.test(sym) ? sym : '📏';
+      // Restore custom icon from comment or a leftover emoji <sym>
+      const mmIcon = [cmt, sym].find((s) => s && s !== 'mile_marker' && /\p{Emoji}/u.test(s)) || '📏';
       // Extract original distance label from desc like "Mile Marker: 1.0 mi"
       const distMatch = desc.match(/Mile Marker:\s*(.+)/i);
       const distLabel = distMatch ? distMatch[1].trim() : name;
@@ -62,7 +58,7 @@ export function parseGPX(xmlString: string): ParseResult {
       const customLabel = name !== distLabel ? name : '';
       mileMarkers.push({ lat, lon, distance: parseFloat(distLabel) || 0, label: distLabel, icon: mmIcon, customLabel });
     } else {
-      const icon = sym && /\p{Emoji}/u.test(sym) ? sym : '📍';
+      const icon = [cmt, sym].find((s) => s && /\p{Emoji}/u.test(s)) || '📍';
       waypoints.push({
         name,
         lat,
