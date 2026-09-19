@@ -7,6 +7,7 @@ import { detectTurns } from '@/lib/turns';
 import { calculateMileMarkers } from '@/lib/miles';
 import { parseGPX, parseKML, parseMarksOnly, mergeWaypoints } from '@/lib/parsers';
 import { exportGPX, exportKML, downloadFile } from '@/lib/exporters';
+import { displayMileMarkerLabel } from '@/lib/garmin';
 import Sidebar from './Sidebar';
 import IconPickerModal from './IconPickerModal';
 import L from 'leaflet';
@@ -148,17 +149,17 @@ export default function MapEditor({ project }: MapEditorProps) {
       const mmIcon = mm.icon && mm.icon !== '📏'
         ? L.divIcon({
             className: '',
-            html: `<div style="font-size:1.3rem;text-shadow:0 1px 4px #000;cursor:${mmCursor};${liveEditMode ? 'filter:drop-shadow(0 0 3px #ff0);' : ''}" title="${mm.customLabel || mm.label}">${mm.icon}</div>`,
+            html: `<div style="font-size:1.3rem;text-shadow:0 1px 4px #000;cursor:${mmCursor};${liveEditMode ? 'filter:drop-shadow(0 0 3px #ff0);' : ''}" title="${displayMileMarkerLabel(mm, settings.mileUnit)}">${mm.icon}</div>`,
             iconSize: [24, 24], iconAnchor: [12, 12],
           })
         : L.divIcon({
             className: '',
-            html: `<div style="background:#3498db;color:#fff;padding:2px 6px;border-radius:10px;font-size:11px;font-weight:bold;white-space:nowrap;border:${mmBorderStyle};box-shadow:0 1px 4px rgba(0,0,0,0.5);cursor:${mmCursor};">${mm.customLabel || mm.label}</div>`,
+            html: `<div style="background:#3498db;color:#fff;padding:2px 6px;border-radius:10px;font-size:11px;font-weight:bold;white-space:nowrap;border:${mmBorderStyle};box-shadow:0 1px 4px rgba(0,0,0,0.5);cursor:${mmCursor};">${displayMileMarkerLabel(mm, settings.mileUnit)}</div>`,
             iconSize: [0, 0], iconAnchor: [20, 10],
           });
-      const displayLabel = mm.customLabel || mm.label;
+      const displayLabel = displayMileMarkerLabel(mm, settings.mileUnit);
       const m = L.marker([mm.lat, mm.lon], { icon: mmIcon, draggable: liveEditMode }).addTo(map);
-      m.bindPopup(`<b>${mm.icon && mm.icon !== '📏' ? mm.icon + ' ' : ''}${displayLabel}</b><br><small>${mm.label} (distance)</small><br><small>${mm.lat.toFixed(5)}, ${mm.lon.toFixed(5)}</small><div style="display:flex;gap:4px;margin-top:8px;"><button data-mmedit="${midx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#3498db;color:#fff;">✏️ Edit</button><button data-mmdelete="${midx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#e94560;color:#fff;">🗑 Remove</button></div>`);
+      m.bindPopup(`<b>${mm.icon && mm.icon !== '📏' ? mm.icon + ' ' : ''}${displayLabel}</b><br><small>${displayLabel}</small><br><small>${mm.lat.toFixed(5)}, ${mm.lon.toFixed(5)}</small><div style="display:flex;gap:4px;margin-top:8px;"><button data-mmedit="${midx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#3498db;color:#fff;">✏️ Edit</button><button data-mmdelete="${midx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#e94560;color:#fff;">🗑 Remove</button></div>`);
       if (liveEditMode) {
         m.on('dragend', (e: L.DragEndEvent) => {
           const pos = (e.target as L.Marker).getLatLng();
@@ -250,7 +251,7 @@ export default function MapEditor({ project }: MapEditorProps) {
         };
       });
     });
-  }, [routePoints, detectedTurns, mileMarkers, waypoints, deleteMode, liveEditMode]);
+  }, [routePoints, detectedTurns, mileMarkers, waypoints, deleteMode, liveEditMode, settings.mileUnit]);
 
   useEffect(() => {
     renderMap();

@@ -163,6 +163,26 @@ export function uniqueTurnExportNames(
 }
 
 const AUTO_MILE_NAME_RE = /^(?:Mile|Km|MI|KM)\s+(\d+(?:\.\d+)?)[a-z]?$/i;
+const DECIMAL_MILE_LABEL_RE = /^\d+(?:\.\d+)?\s*(?:mi|km)$/i;
+
+export function formatMileMarkerLabel(distance: number, unit: 'miles' | 'km' = 'miles'): string {
+  const n = Math.round(Number(distance) || 0);
+  return unit === 'km' ? `Km ${n}` : `Mile ${n}`;
+}
+
+export function isStockMileLabel(name: string): boolean {
+  const s = (name || '').trim();
+  return !s || isAutoMileExportName(s) || DECIMAL_MILE_LABEL_RE.test(s);
+}
+
+export function displayMileMarkerLabel(
+  mm: { distance: number; label: string; customLabel?: string },
+  unit: 'miles' | 'km' = 'miles'
+): string {
+  if (mm.customLabel?.trim() && !isStockMileLabel(mm.customLabel)) return mm.customLabel.trim();
+  const raw = Number.isFinite(mm.distance) && mm.distance > 0 ? mm.distance : parseFloat(mm.label) || 0;
+  return formatMileMarkerLabel(raw, unit);
+}
 
 /** Auto-generated Tread names like "Mile 1" / "Km 12" — not a user custom label. */
 export function isAutoMileExportName(name: string): boolean {
@@ -195,7 +215,7 @@ export function uniqueMileExportNames(
   const prefix = unit === 'km' ? 'Km' : 'Mile';
   const used = new Set<string>(reservedNames.filter(Boolean));
   return markers.map((mm) => {
-    if (mm.customLabel?.trim()) {
+    if (mm.customLabel?.trim() && !isStockMileLabel(mm.customLabel)) {
       const name = mm.customLabel.trim();
       if (!used.has(name)) {
         used.add(name);
@@ -204,7 +224,7 @@ export function uniqueMileExportNames(
     }
     const raw = Number.isFinite(mm.distance) ? mm.distance : parseFloat(mm.label) || 0;
     const n = Math.round(raw);
-    let name = `${prefix} ${n}`;
+    let name = formatMileMarkerLabel(raw, unit);
     if (used.has(name)) {
       for (let i = 97; i <= 122; i++) {
         const candidate = `${prefix} ${n}${String.fromCharCode(i)}`;

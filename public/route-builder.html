@@ -568,6 +568,22 @@ function parseAutoMileExportName(name) {
   return { value: m[1], unit: /^(?:Km|KM)\b/i.test(name.trim()) ? 'km' : 'mi' };
 }
 
+function formatMileMarkerLabel(distance, unit) {
+  const n = Math.round(Number(distance) || 0);
+  return unit === 'km' ? `Km ${n}` : `Mile ${n}`;
+}
+
+function isStockMileLabel(name) {
+  const s = (name || '').trim();
+  return !s || isAutoMileExportName(s) || /^\d+(?:\.\d+)?\s*(?:mi|km)$/i.test(s);
+}
+
+function displayMileMarkerLabel(mm, unit) {
+  if (mm.customLabel && mm.customLabel.trim() && !isStockMileLabel(mm.customLabel)) return mm.customLabel.trim();
+  const raw = Number.isFinite(mm.distance) && mm.distance > 0 ? mm.distance : parseFloat(mm.label) || 0;
+  return formatMileMarkerLabel(raw, unit || (document.getElementById('mileUnit') ? document.getElementById('mileUnit').value : 'miles'));
+}
+
 function isExportedMileMarker(type, desc, cmt, name) {
   if ((type || '').trim() === 'mile_marker') return true;
   if (/^mile_marker$/i.test((cmt || '').trim())) return true;
@@ -580,13 +596,13 @@ function uniqueMileExportNames(markers, unit, reservedNames) {
   const prefix = unit === 'km' ? 'Km' : 'Mile';
   const used = new Set((reservedNames || []).filter(Boolean));
   return markers.map(mm => {
-    if (mm.customLabel && mm.customLabel.trim()) {
+    if (mm.customLabel && mm.customLabel.trim() && !isStockMileLabel(mm.customLabel)) {
       const name = mm.customLabel.trim();
       if (!used.has(name)) { used.add(name); return name; }
     }
     const raw = Number.isFinite(mm.distance) ? mm.distance : parseFloat(mm.label) || 0;
     const n = Math.round(raw);
-    let name = `${prefix} ${n}`;
+    let name = formatMileMarkerLabel(raw, unit);
     if (used.has(name)) {
       for (let i = 97; i <= 122; i++) {
         const candidate = `${prefix} ${n}${String.fromCharCode(i)}`;
@@ -798,8 +814,11 @@ function parseGPX(xml, fname) {
       let distLabel = distMatch ? distMatch[1].trim() : '';
       if (!distLabel && autoMile) distLabel = `${autoMile.value} ${autoMile.unit}`;
       if (!distLabel) distLabel = name;
-      const customLabel = !isAutoMileExportName(name) && name !== distLabel ? name : '';
-      mileMarkers.push({ lat, lon, distance: parseFloat(distLabel) || 0, label: distLabel, icon: mmIcon, customLabel });
+      const distance = parseFloat(distLabel) || parseFloat(autoMile && autoMile.value) || 0;
+      const unit = /km/i.test(distLabel) || (autoMile && autoMile.unit === 'km') ? 'km' : 'miles';
+      const label = formatMileMarkerLabel(distance, unit);
+      const customLabel = !isStockMileLabel(name) && name !== label ? name : '';
+      mileMarkers.push({ lat, lon, distance, label, icon: mmIcon, customLabel });
 
     } else {
       // Regular waypoint — restore icon from sym if it's an emoji
@@ -874,8 +893,11 @@ function parseKML(xml, fname) {
       let distLabel = distMatch ? distMatch[1].trim() : '';
       if (!distLabel && autoMile) distLabel = `${autoMile.value} ${autoMile.unit}`;
       if (!distLabel) distLabel = displayName;
-      const customLabel = !isAutoMileExportName(displayName) && displayName !== distLabel ? displayName : '';
-      mileMarkers.push({ lat: parseFloat(parts[1]), lon: parseFloat(parts[0]), distance: parseFloat(distLabel) || 0, label: distLabel, icon: mmIcon, customLabel });
+      const distance = parseFloat(distLabel) || parseFloat(autoMile && autoMile.value) || 0;
+      const unit = /km/i.test(distLabel) || (autoMile && autoMile.unit === 'km') ? 'km' : 'miles';
+      const label = formatMileMarkerLabel(distance, unit);
+      const customLabel = !isStockMileLabel(displayName) && displayName !== label ? displayName : '';
+      mileMarkers.push({ lat: parseFloat(parts[1]), lon: parseFloat(parts[0]), distance, label, icon: mmIcon, customLabel });
     });
   }
 
@@ -1086,8 +1108,8 @@ function calculateMileMarkers(points) {
     while (dist >= nextMarker) {
       const fraction = (nextMarker - prevDist) / segDist;
       const pt = interpolate(points[i-1], points[i], fraction);
-      const num = unit === 'miles' ? (nextMarker / 1609.344).toFixed(1) : (nextMarker / 1000).toFixed(1);
-      markers.push({ lat: pt.lat, lon: pt.lon, distance: parseFloat(num), label: `${num} ${unit === 'miles' ? 'mi' : 'km'}` });
+      const distance = unit === 'miles' ? nextMarker / 1609.344 : nextMarker / 1000;
+      markers.push({ lat: pt.lat, lon: pt.lon, distance, label: formatMileMarkerLabel(distance, unit) });
       nextMarker += meterInterval;
     }
   }
@@ -1199,13 +1221,13 @@ function renderMap() {
 
   // Mile markers
   mileMarkers.forEach((mm, midx) => {
-    const displayLabel = mm.customLabel || mm.label;
+    const displayLabel = displayMileMarkerLabel(mm);
     const mmBorderStyle = liveEditMode ? '2px dashed #ff0' : '1.5px solid #fff';
     const mmCursor = liveEditMode ? 'grab' : 'pointer';
     const mmIcon = (mm.icon && mm.icon !== '📏')
       ? L.divIcon({ className:'', html: `<div style="font-size:1.3rem;text-shadow:0 1px 4px #000;cursor:${mmCursor};${liveEditMode ? 'filter:drop-shadow(0 0 3px #ff0);' : ''}" title="${displayLabel}">${mm.icon}</div>`, iconSize:[24,24], iconAnchor:[12,12] })
       : L.divIcon({ className:'', html: `<div style="background:#18d4ff;color:#0a0a0b;padding:2px 6px;border-radius:10px;font-size:11px;font-weight:bold;white-space:nowrap;border:${mmBorderStyle};box-shadow:0 1px 4px rgba(0,0,0,0.5);cursor:${mmCursor};">${displayLabel}</div>`, iconSize:[0,0], iconAnchor:[20,10] });
-    const popupContent = `<b>${mm.icon && mm.icon !== '📏' ? mm.icon+' ' : ''}${displayLabel}</b><br><small>${mm.label} (distance)</small><div class="popup-actions"><button class="popup-btn popup-btn-edit" onclick="openEditMileMarker(${midx})">✏️ Edit</button><button class="popup-btn popup-btn-del" onclick="deleteMileMarker(${midx})">🗑 Remove</button></div>`;
+    const popupContent = `<b>${mm.icon && mm.icon !== '📏' ? mm.icon+' ' : ''}${displayLabel}</b><br><small>${displayLabel}</small><div class="popup-actions"><button class="popup-btn popup-btn-edit" onclick="openEditMileMarker(${midx})">✏️ Edit</button><button class="popup-btn popup-btn-del" onclick="deleteMileMarker(${midx})">🗑 Remove</button></div>`;
     const m = L.marker([mm.lat, mm.lon], { icon: mmIcon, draggable: liveEditMode }).addTo(map).bindPopup(popupContent);
     if (liveEditMode) {
       m.on('dragend', (e) => {
@@ -1366,9 +1388,9 @@ function openEditMileMarker(idx) {
   editingMileMarkerIndex = idx;
   const mm = mileMarkers[idx];
 
-  document.getElementById('modalTitle').textContent = `Edit Mile Marker: ${mm.label}`;
+  document.getElementById('modalTitle').textContent = `Edit Mile Marker: ${displayMileMarkerLabel(mm)}`;
   document.getElementById('modalNameField').querySelector('label').textContent = 'Display Label';
-  document.getElementById('modalName').value = mm.customLabel || mm.label;
+  document.getElementById('modalName').value = displayMileMarkerLabel(mm);
   document.getElementById('modalDescField').classList.add('hidden');
   document.getElementById('modalCoordsField').classList.remove('hidden');
   document.getElementById('modalLat').value = mm.lat.toFixed(6);
@@ -1540,7 +1562,8 @@ function applyModal() {
 
   if (modalMode === 'editMileMarker' && editingMileMarkerIndex !== null) {
     const mm = mileMarkers[editingMileMarkerIndex];
-    mm.customLabel = name || '';
+    mm.customLabel = isStockMileLabel(name) ? '' : name;
+    mm.label = displayMileMarkerLabel({ ...mm, customLabel: mm.customLabel });
     mm.icon = selectedIcon;
     const newLat = parseFloat(document.getElementById('modalLat').value);
     const newLon = parseFloat(document.getElementById('modalLon').value);
@@ -1633,7 +1656,7 @@ function exportGPX() {
     const appIcon = mm.icon && mm.icon !== '📏' ? mm.icon : '';
     const sym = appIcon ? garminWaypointSymbol(appIcon) : garminMileSymbol();
     const cmt = appIcon || 'mile_marker';
-    gpx += `  <wpt lat="${mm.lat}" lon="${mm.lon}"><name>${escXml(displayLabel)}</name><cmt>${escXml(cmt)}</cmt><desc>Mile Marker: ${escXml(mm.label)}</desc><sym>${escXml(sym)}</sym><type>Waypoint</type>${wptExt}</wpt>\n`;
+    gpx += `  <wpt lat="${mm.lat}" lon="${mm.lon}"><name>${escXml(displayLabel)}</name><cmt>${escXml(cmt)}</cmt><desc>Mile Marker: ${escXml(displayLabel)}</desc><sym>${escXml(sym)}</sym><type>Waypoint</type>${wptExt}</wpt>\n`;
   });
   waypoints.filter(w => w.enabled).forEach(wp => {
     const cmt = wp.icon ? `<cmt>${escXml(wp.icon)}</cmt>` : '';
@@ -1673,8 +1696,9 @@ function exportKML() {
     kml += `    <Placemark><name>${escXml(label)}</name><description>Turn ${i+1}: ${call} ${turn.direction}</description><styleUrl>#${turnGrade(turn)}_${turn.direction}</styleUrl><Point><coordinates>${turn.lon},${turn.lat},0</coordinates></Point></Placemark>\n`;
   });
   kml += `  </Folder>\n  <Folder><name>Mile Markers</name>\n`;
-  mileMarkers.forEach(mm => {
-    kml += `    <Placemark><name>${mm.label}</name><styleUrl>#mile_marker</styleUrl><Point><coordinates>${mm.lon},${mm.lat},0</coordinates></Point></Placemark>\n`;
+  const kmlMileNames = uniqueMileExportNames(mileMarkers, kmlUnit, waypoints.filter(w => w.enabled).map(w => w.name));
+  mileMarkers.forEach((mm, i) => {
+    kml += `    <Placemark><name>${escXml(kmlMileNames[i])}</name><styleUrl>#mile_marker</styleUrl><Point><coordinates>${mm.lon},${mm.lat},0</coordinates></Point></Placemark>\n`;
   });
   kml += `  </Folder>\n`;
   const enabledWps = waypoints.filter(w => w.enabled);

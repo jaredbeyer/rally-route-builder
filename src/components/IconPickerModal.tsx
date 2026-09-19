@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { Waypoint, DetectedTurn, MileMarker, TurnGrade } from '@/lib/types';
 import { WAYPOINT_ICONS, MILE_MARKER_ICONS, TURN_GRADES, TURN_GRADE_META, turnCode } from '@/lib/types';
+import { displayMileMarkerLabel, isStockMileLabel } from '@/lib/garmin';
 
 type ModalMode = 'edit' | 'add' | 'addAtCoords' | 'editTurn' | 'editMileMarker';
 
@@ -66,7 +67,7 @@ export default function IconPickerModal({
       setGrade(turn.grade);
       setAngle(turn.angle.toFixed(0));
     } else if (mode === 'editMileMarker' && mileMarker) {
-      setName(mileMarker.customLabel || mileMarker.label);
+      setName(displayMileMarkerLabel(mileMarker));
       setLat(mileMarker.lat.toFixed(6));
       setLon(mileMarker.lon.toFixed(6));
       setIcon(mileMarker.icon || '📏');
@@ -93,7 +94,7 @@ export default function IconPickerModal({
     } else if (isMileMarker && mileMarker && mileMarkerIndex !== undefined && mileMarkerIndex !== null) {
       const updated: MileMarker = {
         ...mileMarker,
-        customLabel: name.trim() || '',
+        customLabel: isStockMileLabel(name) ? '' : name.trim(),
         icon,
         lat: parseFloat(lat) || mileMarker.lat,
         lon: parseFloat(lon) || mileMarker.lon,

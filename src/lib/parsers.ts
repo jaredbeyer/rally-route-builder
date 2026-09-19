@@ -1,6 +1,6 @@
 import type { RoutePoint, DetectedTurn, MileMarker, Waypoint } from './types';
 import { parseGrade } from './types';
-import { isAutoMileExportName, isExportedMileMarker, parseAutoMileExportName, parseTurnWaypoint } from './garmin';
+import { formatMileMarkerLabel, isExportedMileMarker, isStockMileLabel, parseAutoMileExportName, parseTurnWaypoint } from './garmin';
 import { haversine } from './geo';
 
 export interface ParseResult {
@@ -60,9 +60,11 @@ export function parseGPX(xmlString: string): ParseResult {
         distLabel = `${autoMile.value} ${autoMile.unit}`;
       }
       if (!distLabel) distLabel = name;
-      // Auto names (Mile 1) and names that match the distance label are not custom
-      const customLabel = !isAutoMileExportName(name) && name !== distLabel ? name : '';
-      mileMarkers.push({ lat, lon, distance: parseFloat(distLabel) || 0, label: distLabel, icon: mmIcon, customLabel });
+      const distance = parseFloat(distLabel) || parseFloat(autoMile?.value || '') || 0;
+      const unit = /km/i.test(distLabel) || autoMile?.unit === 'km' ? 'km' : 'miles';
+      const label = formatMileMarkerLabel(distance, unit);
+      const customLabel = !isStockMileLabel(name) && name !== label ? name : '';
+      mileMarkers.push({ lat, lon, distance, label, icon: mmIcon, customLabel });
     } else {
       const icon = [cmt, sym].find((s) => s && /\p{Emoji}/u.test(s)) || '📍';
       waypoints.push({
@@ -158,12 +160,16 @@ export function parseKML(xmlString: string): ParseResult {
       // Extract distance label from description
       const distMatch = desc.match(/Distance:\s*(.+?)(?:,|$)/i);
       const distLabel = distMatch ? distMatch[1].trim() : displayName;
-      const customLabel = !isAutoMileExportName(displayName) && displayName !== distLabel ? displayName : '';
+      const autoMile = parseAutoMileExportName(displayName);
+      const distance = parseFloat(distLabel) || parseFloat(autoMile?.value || '') || 0;
+      const unit = /km/i.test(distLabel) || autoMile?.unit === 'km' ? 'km' : 'miles';
+      const label = formatMileMarkerLabel(distance, unit);
+      const customLabel = !isStockMileLabel(displayName) && displayName !== label ? displayName : '';
       mileMarkers.push({
         lat: parseFloat(parts[1]),
         lon: parseFloat(parts[0]),
-        distance: parseFloat(distLabel) || 0,
-        label: distLabel,
+        distance,
+        label,
         icon: mmIcon,
         customLabel,
       });

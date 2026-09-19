@@ -5,6 +5,7 @@ import type { RoutePoint, DetectedTurn, MileMarker, Waypoint, RouteSettings } fr
 import { TURN_COLORS, TURN_GRADE_META, TURN_GRADES } from '@/lib/types';
 import type { TurnGrade } from '@/lib/types';
 import { totalDistance } from '@/lib/geo';
+import { displayMileMarkerLabel } from '@/lib/garmin';
 import TurnList from './TurnList';
 import WaypointList from './WaypointList';
 
@@ -243,7 +244,7 @@ export default function Sidebar(props: SidebarProps) {
                   >
                     <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>{mm.icon || '📏'}</span>
                     <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {mm.customLabel || mm.label}
+                      {displayMileMarkerLabel(mm, settings.mileUnit)}
                     </div>
                     <div
                       onClick={(e) => { e.stopPropagation(); onEditMileMarker(i); }}

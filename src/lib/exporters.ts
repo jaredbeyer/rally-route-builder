@@ -41,7 +41,7 @@ export function exportGPX(
     const appIcon = mm.icon && mm.icon !== '📏' ? mm.icon : '';
     const sym = appIcon ? garminWaypointSymbol(appIcon) : garminMileSymbol();
     const cmt = appIcon || 'mile_marker';
-    gpx += `  <wpt lat="${mm.lat}" lon="${mm.lon}"><name>${escXml(displayLabel)}</name><cmt>${escXml(cmt)}</cmt><desc>Mile Marker: ${escXml(mm.label)}</desc><sym>${escXml(sym)}</sym><type>Waypoint</type>${GPX_WPT_EXTENSION}</wpt>\n`;
+    gpx += `  <wpt lat="${mm.lat}" lon="${mm.lon}"><name>${escXml(displayLabel)}</name><cmt>${escXml(cmt)}</cmt><desc>Mile Marker: ${escXml(displayLabel)}</desc><sym>${escXml(sym)}</sym><type>Waypoint</type>${GPX_WPT_EXTENSION}</wpt>\n`;
   });
 
   waypoints
@@ -107,7 +107,7 @@ export function exportKML(
   mileMarkers.forEach((mm, i) => {
     const displayLabel = mileNames[i];
     const iconInfo = mm.icon && mm.icon !== '📏' ? mm.icon + ' ' : '';
-    kml += `    <Placemark><name>${escXml(iconInfo + displayLabel)}</name><description>Distance: ${mm.label}${mm.icon && mm.icon !== '📏' ? ', icon: ' + mm.icon : ''}</description><styleUrl>#mile_marker</styleUrl><Point><coordinates>${mm.lon},${mm.lat},0</coordinates></Point></Placemark>\n`;
+    kml += `    <Placemark><name>${escXml(iconInfo + displayLabel)}</name><description>Distance: ${displayLabel}${mm.icon && mm.icon !== '📏' ? ', icon: ' + mm.icon : ''}</description><styleUrl>#mile_marker</styleUrl><Point><coordinates>${mm.lon},${mm.lat},0</coordinates></Point></Placemark>\n`;
   });
   kml += `  </Folder>\n`;
 
