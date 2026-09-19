@@ -534,7 +534,10 @@ function distanceAlongRoute(points, target) {
   if (!points.length) return 0;
   const cum = [0];
   for (let i = 1; i < points.length; i++) cum.push(cum[i - 1] + haversine(points[i - 1], points[i]));
-  if (target.idx != null && target.idx >= 0 && target.idx < cum.length) return cum[target.idx];
+  if (target.idx != null && target.idx >= 0 && target.idx < cum.length) {
+    // idx: 0 was used as a dummy on reimport, which pinned every turn at mile 0.
+    if (haversine(points[target.idx], target) < 50) return cum[target.idx];
+  }
   let best = 0, bestGap = Infinity;
   for (let i = 0; i < points.length; i++) {
     const gap = haversine(points[i], target);
@@ -560,7 +563,7 @@ function uniqueTurnExportNames(turns, points, unit) {
       if (!used.has(name)) { used.add(name); return name; }
     }
     const code = turnCall(turn);
-    const meters = distanceAlongRoute(points, turn);
+    const meters = distanceAlongRoute(points, { lat: turn.lat, lon: turn.lon });
     let decimals = 1;
     let name = `${code} ${metersToDisplay(meters, unit, decimals)}`;
     while (used.has(name) && decimals < 4) {
@@ -650,7 +653,7 @@ function parseGPX(xml, fname) {
       isReimport = true;
       const cmt = wpt.querySelector('cmt') ? wpt.querySelector('cmt').textContent : '';
       const parsed = parseTurnWaypoint(name, desc, sym, cmt);
-      detectedTurns.push({ lat, lon, angle: parsed.angle, direction: parsed.direction, sharpness: parsed.sharpness, label: parsed.label, idx: 0 });
+      detectedTurns.push({ lat, lon, angle: parsed.angle, direction: parsed.direction, sharpness: parsed.sharpness, label: parsed.label });
 
     } else if (type === 'mile_marker') {
       isReimport = true;
@@ -709,7 +712,7 @@ function parseKML(xml, fname) {
       const desc = pm.querySelector('description') ? pm.querySelector('description').textContent : '';
       const styleUrl = pm.querySelector('styleUrl') ? pm.querySelector('styleUrl').textContent.replace('#','') : '';
       const parsed = parseTurnWaypoint(name, desc, styleUrl, '');
-      detectedTurns.push({ lat, lon, angle: parsed.angle, direction: parsed.direction, sharpness: parsed.sharpness, label: parsed.label, idx: 0 });
+      detectedTurns.push({ lat, lon, angle: parsed.angle, direction: parsed.direction, sharpness: parsed.sharpness, label: parsed.label });
     });
   }
 

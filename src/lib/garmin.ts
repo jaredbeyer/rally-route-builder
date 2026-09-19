@@ -148,7 +148,7 @@ export function uniqueTurnExportNames(
       }
     }
     const code = turnCode(turn.direction, turn.grade);
-    const meters = distanceAlongRoute(routePoints, turn);
+    const meters = distanceAlongRoute(routePoints, { lat: turn.lat, lon: turn.lon });
     let decimals = 1;
     let name = `${code} ${metersToDisplay(meters, unit, decimals)}`;
     while (used.has(name) && decimals < 4) {

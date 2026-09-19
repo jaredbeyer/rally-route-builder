@@ -46,7 +46,7 @@ export function parseGPX(xmlString: string): ParseResult {
     if (type === 'turn') {
       isReimport = true;
       const parsed = parseTurnWaypoint(name, desc, sym, cmt);
-      detectedTurns.push({ lat, lon, ...parsed, idx: 0 });
+      detectedTurns.push({ lat, lon, ...parsed });
     } else if (type === 'mile_marker') {
       isReimport = true;
       // Restore custom icon from comment or a leftover emoji <sym>
@@ -133,7 +133,7 @@ export function parseKML(xmlString: string): ParseResult {
       const angle = angleMatch ? parseFloat(angleMatch[1]) : 90;
       const autoPattern = /^(?:[LR][1-6]|(?:FLAT|SLIGHT|MODERATE|SHARP|HAIRPIN)\s+[LR])(?:\s+\d+deg)?$/i;
       const label = autoPattern.test(name) ? '' : name;
-      detectedTurns.push({ lat, lon, angle, direction, grade, label, idx: 0 });
+      detectedTurns.push({ lat, lon, angle, direction, grade, label });
     });
   }
 

@@ -63,7 +63,9 @@ export function distanceAlongRoute(
   const cum = cumulativeDistances(points);
   if (!cum.length) return 0;
   if (target.idx != null && target.idx >= 0 && target.idx < cum.length) {
-    return cum[target.idx];
+    // idx: 0 was used as a dummy on reimport, which pinned every turn at mile 0.
+    // Only trust the index when the turn is actually near that track point.
+    if (haversine(points[target.idx], target) < 50) return cum[target.idx];
   }
   let best = 0;
   let bestGap = Infinity;
