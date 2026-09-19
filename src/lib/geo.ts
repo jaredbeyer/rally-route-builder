@@ -45,3 +45,34 @@ export function totalDistance(points: RoutePoint[]): number {
   }
   return d;
 }
+
+/** Metres along the track to each point index. */
+export function cumulativeDistances(points: RoutePoint[]): number[] {
+  const out = [0];
+  for (let i = 1; i < points.length; i++) {
+    out.push(out[i - 1] + haversine(points[i - 1], points[i]));
+  }
+  return out;
+}
+
+/** Metres along the track to a lat/lon (nearest track point, or idx when present). */
+export function distanceAlongRoute(
+  points: RoutePoint[],
+  target: { lat: number; lon: number; idx?: number }
+): number {
+  const cum = cumulativeDistances(points);
+  if (!cum.length) return 0;
+  if (target.idx != null && target.idx >= 0 && target.idx < cum.length) {
+    return cum[target.idx];
+  }
+  let best = 0;
+  let bestGap = Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const gap = haversine(points[i], target);
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = cum[i];
+    }
+  }
+  return best;
+}

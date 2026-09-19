@@ -1,5 +1,6 @@
-import type { DetectedTurn, TurnGrade } from './types';
+import type { DetectedTurn, RoutePoint, TurnGrade } from './types';
 import { parseGrade, turnCode } from './types';
+import { distanceAlongRoute } from './geo';
 
 /** Official Garmin Tread / Explore waypoint symbol names (JaVaWa list). */
 export function garminTurnSymbol(direction: 'left' | 'right', _grade?: TurnGrade): string {
@@ -116,8 +117,46 @@ export function parseTurnWaypoint(
   const angleMatch = desc.match(/([\d.]+)\s*degrees/i) || name.match(/(\d+)\s*deg/i);
   const angle = angleMatch ? parseFloat(angleMatch[1]) : 90;
 
-  const autoPattern = /^(?:[LR][1-6]|(?:FLAT|SLIGHT|MODERATE|SHARP|HAIRPIN)\s+[LR])(?:\s+\d+deg)?$/i;
+  const autoPattern = /^(?:[LR][1-6](?:\s+\d+(?:\.\d+)?)?(?:\s*deg)?|(?:FLAT|SLIGHT|MODERATE|SHARP|HAIRPIN)\s+[LR](?:\s+\d+deg)?)$/i;
   const label = autoPattern.test(name) ? '' : name && name !== turnCode(direction, grade) ? name : '';
 
   return { grade, direction, angle, label };
+}
+
+function metersToDisplay(meters: number, unit: 'miles' | 'km', decimals: number): string {
+  const value = unit === 'km' ? meters / 1000 : meters / 1609.344;
+  return value.toFixed(decimals);
+}
+
+/**
+ * Tread/BaseCamp require unique waypoint names and append " 1", " 2" when they collide.
+ * Use the pace-note code plus mile/km along the route so names stay unique without a serial.
+ */
+export function uniqueTurnExportNames(
+  turns: DetectedTurn[],
+  routePoints: RoutePoint[],
+  unit: 'miles' | 'km' = 'miles',
+  reservedNames: string[] = []
+): string[] {
+  const used = new Set<string>(reservedNames.filter(Boolean));
+  return turns.map((turn) => {
+    if (turn.label?.trim()) {
+      let name = turn.label.trim();
+      if (!used.has(name)) {
+        used.add(name);
+        return name;
+      }
+    }
+    const code = turnCode(turn.direction, turn.grade);
+    const meters = distanceAlongRoute(routePoints, turn);
+    let decimals = 1;
+    let name = `${code} ${metersToDisplay(meters, unit, decimals)}`;
+    while (used.has(name) && decimals < 4) {
+      decimals += 1;
+      name = `${code} ${metersToDisplay(meters, unit, decimals)}`;
+    }
+    if (used.has(name)) name = `${code} ${metersToDisplay(meters, unit, 4)}x`;
+    used.add(name);
+    return name;
+  });
 }

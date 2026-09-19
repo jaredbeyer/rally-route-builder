@@ -321,12 +321,12 @@ export default function MapEditor({ project }: MapEditorProps) {
   };
 
   const handleExportGPX = () => {
-    const content = exportGPX(routePoints, detectedTurns, mileMarkers, waypoints);
+    const content = exportGPX(routePoints, detectedTurns, mileMarkers, waypoints, settings);
     downloadFile(content, `${project.name || 'rally-route'}.gpx`, 'application/gpx+xml');
   };
 
   const handleExportKML = () => {
-    const content = exportKML(routePoints, detectedTurns, mileMarkers, waypoints);
+    const content = exportKML(routePoints, detectedTurns, mileMarkers, waypoints, settings);
     downloadFile(content, `${project.name || 'rally-route'}.kml`, 'application/vnd.google-earth.kml+xml');
   };
 
