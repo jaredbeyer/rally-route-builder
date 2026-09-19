@@ -617,8 +617,8 @@ function uniqueMileExportNames(markers, unit, reservedNames) {
 
 function uniqueTurnExportNames(turns, points, unit, reservedNames) {
   const reserved = reservedNames || [
-    ...uniqueMileExportNames(mileMarkers, unit, waypoints.filter(w => w.enabled).map(w => w.name)),
-    ...waypoints.filter(w => w.enabled).map(w => w.name)
+    ...uniqueMileExportNames(mileMarkers, unit, waypoints.filter(w => w.enabled !== false).map(w => w.name)),
+    ...waypoints.filter(w => w.enabled !== false).map(w => w.name)
   ].filter(Boolean);
   const used = new Set(reserved);
   return turns.map(turn => {
@@ -690,6 +690,42 @@ function handleFile(file) {
   reader.readAsText(file);
 }
 
+function gpxElements(root, localName) {
+  const out = [];
+  const seen = new Set();
+  const add = (list) => {
+    for (let i = 0; i < list.length; i++) {
+      if (!seen.has(list[i])) { seen.add(list[i]); out.push(list[i]); }
+    }
+  };
+  add(root.getElementsByTagName(localName));
+  try { add(root.getElementsByTagNameNS('*', localName)); } catch (e) {}
+  add(root.querySelectorAll(localName));
+  return out;
+}
+
+function gpxChildText(el, localName) {
+  const kids = gpxElements(el, localName);
+  return kids.length ? (kids[0].textContent || '') : '';
+}
+
+function isOurTurnWaypoint(type) {
+  return (type || '').trim() === 'turn';
+}
+
+function isOurMileWaypoint(type, desc, cmt) {
+  if ((type || '').trim() === 'mile_marker') return true;
+  if (/^mile_marker$/i.test((cmt || '').trim())) return true;
+  if (/^Mile Marker:/i.test(desc || '')) return true;
+  return false;
+}
+
+function mergeKeptMarks(kept) {
+  kept.forEach(wp => {
+    if (!waypoints.some(ex => haversine(ex, wp) < 15)) waypoints.push(wp);
+  });
+}
+
 function waypointIconFromSym(sym, cmt) {
   if (cmt && /\p{Emoji}/u.test(cmt)) return cmt;
   if (sym && /\p{Emoji}/u.test(sym)) return sym;
@@ -704,19 +740,20 @@ function waypointIconFromSym(sym, cmt) {
 
 function extractMarksFromGPX(xml) {
   const marks = [];
-  xml.querySelectorAll('wpt').forEach(wpt => {
-    const type = wpt.querySelector('type') ? wpt.querySelector('type').textContent : '';
-    const name = wpt.querySelector('name') ? wpt.querySelector('name').textContent : 'Unnamed';
-    const desc = wpt.querySelector('desc') ? wpt.querySelector('desc').textContent : '';
-    const cmt = wpt.querySelector('cmt') ? wpt.querySelector('cmt').textContent : '';
-    if (type === 'turn' || isExportedMileMarker(type, desc, cmt, name)) return;
+  gpxElements(xml, 'wpt').forEach(wpt => {
+    const type = gpxChildText(wpt, 'type');
+    const name = gpxChildText(wpt, 'name') || 'Unnamed';
+    const desc = gpxChildText(wpt, 'desc');
+    const cmt = gpxChildText(wpt, 'cmt');
+    if (isOurTurnWaypoint(type) || isOurMileWaypoint(type, desc, cmt)) return;
     const lat = parseFloat(wpt.getAttribute('lat'));
     const lon = parseFloat(wpt.getAttribute('lon'));
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-    const sym = wpt.querySelector('sym') ? wpt.querySelector('sym').textContent : '';
+    const sym = gpxChildText(wpt, 'sym');
+    const eleText = gpxChildText(wpt, 'ele');
     marks.push({
       name, lat, lon,
-      ele: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele').textContent) : null,
+      ele: eleText ? parseFloat(eleText) : null,
       desc, icon: waypointIconFromSym(sym, cmt), enabled: true
     });
   });
@@ -774,12 +811,13 @@ function handleMarksFile(file) {
 }
 
 function parseGPX(xml, fname) {
+  const keptMarks = waypoints.slice();
   routePoints = []; waypoints = []; detectedTurns = []; mileMarkers = [];
   let isReimport = false;
 
   // Track points
-  const trkpts = xml.querySelectorAll('trkpt');
-  const rtepts = xml.querySelectorAll('rtept');
+  const trkpts = gpxElements(xml, 'trkpt');
+  const rtepts = gpxElements(xml, 'rtept');
   const pts = trkpts.length ? trkpts : rtepts;
   pts.forEach(pt => {
     routePoints.push({
@@ -791,14 +829,14 @@ function parseGPX(xml, fname) {
   });
 
   // Waypoints — sort into categories by <type> tag
-  xml.querySelectorAll('wpt').forEach(wpt => {
+  gpxElements(xml, 'wpt').forEach(wpt => {
     const lat = parseFloat(wpt.getAttribute('lat'));
     const lon = parseFloat(wpt.getAttribute('lon'));
-    const name = wpt.querySelector('name') ? wpt.querySelector('name').textContent : 'Unnamed';
-    const desc = wpt.querySelector('desc') ? wpt.querySelector('desc').textContent : '';
-    const sym = wpt.querySelector('sym') ? wpt.querySelector('sym').textContent : '';
-    const type = wpt.querySelector('type') ? wpt.querySelector('type').textContent : '';
-    const cmt = wpt.querySelector('cmt') ? wpt.querySelector('cmt').textContent : '';
+    const name = gpxChildText(wpt, 'name') || 'Unnamed';
+    const desc = gpxChildText(wpt, 'desc');
+    const sym = gpxChildText(wpt, 'sym');
+    const type = gpxChildText(wpt, 'type');
+    const cmt = gpxChildText(wpt, 'cmt');
 
     if (type === 'turn') {
       // Re-import a previously exported turn
@@ -823,14 +861,17 @@ function parseGPX(xml, fname) {
     } else {
       // Regular waypoint — restore icon from sym if it's an emoji
       const icon = (sym && /\p{Emoji}/u.test(sym)) ? sym : '📍';
-      waypoints.push({ name, lat, lon, ele: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele').textContent) : null, desc, icon, enabled: true });
+      const eleText = gpxChildText(wpt, 'ele');
+      waypoints.push({ name, lat, lon, ele: eleText ? parseFloat(eleText) : null, desc, icon, enabled: true });
     }
   });
 
+  mergeKeptMarks(keptMarks);
   finishLoad(fname, isReimport);
 }
 
 function parseKML(xml, fname) {
+  const keptMarks = waypoints.slice();
   routePoints = []; waypoints = []; detectedTurns = []; mileMarkers = [];
   let isReimport = false;
 
@@ -934,6 +975,7 @@ function parseKML(xml, fname) {
     });
   }
 
+  mergeKeptMarks(keptMarks);
   finishLoad(fname, isReimport);
 }
 
@@ -1153,7 +1195,7 @@ function updateStats() {
   const km = (dist / 1000).toFixed(1);
   const leftTurns = detectedTurns.filter(t => t.direction === 'left').length;
   const rightTurns = detectedTurns.filter(t => t.direction === 'right').length;
-  const enabledWps = waypoints.filter(w => w.enabled).length;
+  const enabledWps = waypoints.filter(w => w.enabled !== false).length;
   document.getElementById('statsBar').innerHTML = `
     <div class="stat"><span class="val">${miles}</span> mi / <span class="val">${km}</span> km</div>
     <div class="stat"><span class="val">${routePoints.length}</span> pts</div>
@@ -1241,7 +1283,7 @@ function renderMap() {
 
   // Waypoints (draggable only in live edit mode)
   waypoints.forEach((wp, idx) => {
-    if (!wp.enabled) return;
+    if (wp.enabled === false) return;
     const wpCursor = liveEditMode ? 'grab' : 'pointer';
     const icon = L.divIcon({
       className: '',
@@ -1633,7 +1675,8 @@ function closeModal() {
 // =========================================
 function exportGPX() {
   const unit = document.getElementById('mileUnit') ? document.getElementById('mileUnit').value : 'miles';
-  const wpNames = waypoints.filter(w => w.enabled).map(w => w.name);
+  const enabledMarks = waypoints.filter(w => w.enabled !== false);
+  const wpNames = enabledMarks.map(w => w.name);
   const mileNames = uniqueMileExportNames(mileMarkers, unit, wpNames);
   const turnNames = uniqueTurnExportNames(detectedTurns, routePoints, unit, [...mileNames, ...wpNames]);
   const wptExt = '<extensions><gpxx:WaypointExtension><gpxx:DisplayMode>SymbolAndName</gpxx:DisplayMode></gpxx:WaypointExtension></extensions>';
@@ -1645,11 +1688,9 @@ function exportGPX() {
   xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd http://www.garmin.com/xmlschemas/GpxExtensions/v3 http://www8.garmin.com/xmlschemas/GpxExtensionsv3.xsd">
   <metadata><name>Rally Route</name><desc>Generated by Rally Route Builder</desc></metadata>
 `;
-  detectedTurns.forEach((turn, i) => {
-    const call = turnCall(turn);
-    const label = turnNames[i];
-    const cmt = `${turnGrade(turn)}_${turn.direction}`;
-    gpx += `  <wpt lat="${turn.lat}" lon="${turn.lon}"><name>${escXml(label)}</name><cmt>${escXml(cmt)}</cmt><desc>Turn ${i+1}: ${call} ${turn.direction} at ${turn.angle.toFixed(1)} degrees</desc><sym>${escXml(garminTurnSymbol(turn.direction))}</sym><type>turn</type>${wptExt}</wpt>\n`;
+  enabledMarks.forEach(wp => {
+    const cmt = wp.icon ? `<cmt>${escXml(wp.icon)}</cmt>` : '';
+    gpx += `  <wpt lat="${wp.lat}" lon="${wp.lon}"><name>${escXml(wp.name)}</name>${cmt}<desc>${escXml(wp.desc||'')}</desc><sym>${escXml(garminWaypointSymbol(wp.icon))}</sym><type>Waypoint</type>${wptExt}</wpt>\n`;
   });
   mileMarkers.forEach((mm, i) => {
     const displayLabel = mileNames[i];
@@ -1658,9 +1699,11 @@ function exportGPX() {
     const cmt = appIcon || 'mile_marker';
     gpx += `  <wpt lat="${mm.lat}" lon="${mm.lon}"><name>${escXml(displayLabel)}</name><cmt>${escXml(cmt)}</cmt><desc>Mile Marker: ${escXml(displayLabel)}</desc><sym>${escXml(sym)}</sym><type>Waypoint</type>${wptExt}</wpt>\n`;
   });
-  waypoints.filter(w => w.enabled).forEach(wp => {
-    const cmt = wp.icon ? `<cmt>${escXml(wp.icon)}</cmt>` : '';
-    gpx += `  <wpt lat="${wp.lat}" lon="${wp.lon}"><name>${escXml(wp.name)}</name>${cmt}<desc>${escXml(wp.desc||'')}</desc><sym>${escXml(garminWaypointSymbol(wp.icon))}</sym><type>waypoint</type>${wptExt}</wpt>\n`;
+  detectedTurns.forEach((turn, i) => {
+    const call = turnCall(turn);
+    const label = turnNames[i];
+    const cmt = `${turnGrade(turn)}_${turn.direction}`;
+    gpx += `  <wpt lat="${turn.lat}" lon="${turn.lon}"><name>${escXml(label)}</name><cmt>${escXml(cmt)}</cmt><desc>Turn ${i+1}: ${call} ${turn.direction} at ${turn.angle.toFixed(1)} degrees</desc><sym>${escXml(garminTurnSymbol(turn.direction))}</sym><type>turn</type>${wptExt}</wpt>\n`;
   });
   gpx += `  <trk><name>Route</name><trkseg>\n`;
   routePoints.forEach(p => {
@@ -1696,12 +1739,12 @@ function exportKML() {
     kml += `    <Placemark><name>${escXml(label)}</name><description>Turn ${i+1}: ${call} ${turn.direction}</description><styleUrl>#${turnGrade(turn)}_${turn.direction}</styleUrl><Point><coordinates>${turn.lon},${turn.lat},0</coordinates></Point></Placemark>\n`;
   });
   kml += `  </Folder>\n  <Folder><name>Mile Markers</name>\n`;
-  const kmlMileNames = uniqueMileExportNames(mileMarkers, kmlUnit, waypoints.filter(w => w.enabled).map(w => w.name));
+  const kmlMileNames = uniqueMileExportNames(mileMarkers, kmlUnit, waypoints.filter(w => w.enabled !== false).map(w => w.name));
   mileMarkers.forEach((mm, i) => {
     kml += `    <Placemark><name>${escXml(kmlMileNames[i])}</name><styleUrl>#mile_marker</styleUrl><Point><coordinates>${mm.lon},${mm.lat},0</coordinates></Point></Placemark>\n`;
   });
   kml += `  </Folder>\n`;
-  const enabledWps = waypoints.filter(w => w.enabled);
+  const enabledWps = waypoints.filter(w => w.enabled !== false);
   if (enabledWps.length) {
     kml += `  <Folder><name>Waypoints</name>\n`;
     enabledWps.forEach(wp => {

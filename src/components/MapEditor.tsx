@@ -175,7 +175,7 @@ export default function MapEditor({ project }: MapEditorProps) {
 
     // Waypoints (draggable only in live edit mode)
     waypoints.forEach((wp, idx) => {
-      if (!wp.enabled) return;
+      if (wp.enabled === false) return;
       const wpCursor = liveEditMode ? 'grab' : 'pointer';
       const icon = L.divIcon({
         className: '',
@@ -278,7 +278,7 @@ export default function MapEditor({ project }: MapEditorProps) {
     const result = ext === 'kml' ? parseKML(content) : parseGPX(content);
 
     setRoutePoints(result.routePoints);
-    setWaypoints(result.waypoints);
+    setWaypoints((prev) => mergeWaypoints(prev, result.waypoints).waypoints);
     setFileName(name);
 
     if (result.isReimport && result.detectedTurns.length > 0) {
@@ -300,10 +300,14 @@ export default function MapEditor({ project }: MapEditorProps) {
       alert('No marks/waypoints found in that file.');
       return;
     }
-    const result = mergeWaypoints(waypoints, incoming);
-    setWaypoints(result.waypoints);
-    const skip = result.skipped ? ` (${result.skipped} already on the map)` : '';
-    alert(`Added ${result.added} mark${result.added === 1 ? '' : 's'} from ${name}${skip}.`);
+    setWaypoints((prev) => {
+      const result = mergeWaypoints(prev, incoming);
+      const skip = result.skipped ? ` (${result.skipped} already on the map)` : '';
+      setTimeout(() => {
+        alert(`Added ${result.added} mark${result.added === 1 ? '' : 's'} from ${name}${skip}.`);
+      }, 0);
+      return result.waypoints;
+    });
   };
 
   const handleResetFile = () => {

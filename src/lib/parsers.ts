@@ -11,6 +11,39 @@ export interface ParseResult {
   isReimport: boolean;
 }
 
+function gpxElements(root: Document | Element, localName: string): Element[] {
+  const out: Element[] = [];
+  const seen = new Set<Element>();
+  const add = (list: ArrayLike<Element>) => {
+    for (let i = 0; i < list.length; i++) {
+      const el = list[i];
+      if (!seen.has(el)) {
+        seen.add(el);
+        out.push(el);
+      }
+    }
+  };
+  add(root.getElementsByTagName(localName));
+  add(root.getElementsByTagNameNS('*', localName));
+  add(root.querySelectorAll(localName));
+  return out;
+}
+
+function gpxChildText(el: Element, localName: string): string {
+  return gpxElements(el, localName)[0]?.textContent || '';
+}
+
+function isOurTurnWaypoint(type: string): boolean {
+  return (type || '').trim() === 'turn';
+}
+
+function isOurMileWaypoint(type: string, desc: string, cmt: string): boolean {
+  if ((type || '').trim() === 'mile_marker') return true;
+  if (/^mile_marker$/i.test((cmt || '').trim())) return true;
+  if (/^Mile Marker:/i.test(desc || '')) return true;
+  return false;
+}
+
 export function parseGPX(xmlString: string): ParseResult {
   const parser = new DOMParser();
   const xml = parser.parseFromString(xmlString, 'text/xml');
@@ -22,8 +55,8 @@ export function parseGPX(xmlString: string): ParseResult {
   let isReimport = false;
 
   // Track points
-  const trkpts = xml.querySelectorAll('trkpt');
-  const rtepts = xml.querySelectorAll('rtept');
+  const trkpts = gpxElements(xml, 'trkpt');
+  const rtepts = gpxElements(xml, 'rtept');
   const pts = trkpts.length ? trkpts : rtepts;
   pts.forEach((pt) => {
     routePoints.push({
@@ -35,14 +68,14 @@ export function parseGPX(xmlString: string): ParseResult {
   });
 
   // Waypoints — sort into categories by <type> tag
-  xml.querySelectorAll('wpt').forEach((wpt) => {
+  gpxElements(xml, 'wpt').forEach((wpt) => {
     const lat = parseFloat(wpt.getAttribute('lat') || '0');
     const lon = parseFloat(wpt.getAttribute('lon') || '0');
-    const name = wpt.querySelector('name')?.textContent || 'Unnamed';
-    const desc = wpt.querySelector('desc')?.textContent || '';
-    const sym = wpt.querySelector('sym')?.textContent || '';
-    const cmt = wpt.querySelector('cmt')?.textContent || '';
-    const type = wpt.querySelector('type')?.textContent || '';
+    const name = gpxChildText(wpt, 'name') || 'Unnamed';
+    const desc = gpxChildText(wpt, 'desc');
+    const sym = gpxChildText(wpt, 'sym');
+    const cmt = gpxChildText(wpt, 'cmt');
+    const type = gpxChildText(wpt, 'type');
 
     if (type === 'turn') {
       isReimport = true;
@@ -71,7 +104,7 @@ export function parseGPX(xmlString: string): ParseResult {
         name,
         lat,
         lon,
-        ele: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele')!.textContent || '0') : null,
+        ele: gpxChildText(wpt, 'ele') ? parseFloat(gpxChildText(wpt, 'ele')) : null,
         desc,
         icon,
         enabled: true,
@@ -220,11 +253,43 @@ export function parseKML(xmlString: string): ParseResult {
   return { routePoints, detectedTurns, mileMarkers, waypoints, isReimport };
 }
 
+function waypointFromGpxWpt(wpt: Element): Waypoint | null {
+  const lat = parseFloat(wpt.getAttribute('lat') || '');
+  const lon = parseFloat(wpt.getAttribute('lon') || '');
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  const name = gpxChildText(wpt, 'name') || 'Unnamed';
+  const desc = gpxChildText(wpt, 'desc');
+  const sym = gpxChildText(wpt, 'sym');
+  const cmt = gpxChildText(wpt, 'cmt');
+  const icon = [cmt, sym].find((s) => s && /\p{Emoji}/u.test(s)) || '📍';
+  return {
+    name,
+    lat,
+    lon,
+    ele: gpxChildText(wpt, 'ele') ? parseFloat(gpxChildText(wpt, 'ele')) : null,
+    desc,
+    icon,
+    enabled: true,
+  };
+}
+
 /** Read only marks/waypoints from a GPX or KML. Ignores track, turns, and mile markers. */
 export function parseMarksOnly(xmlString: string, filename: string): Waypoint[] {
   const ext = filename.split('.').pop()?.toLowerCase();
-  const result = ext === 'kml' ? parseKML(xmlString) : parseGPX(xmlString);
-  return result.waypoints;
+  if (ext === 'kml') return parseKML(xmlString).waypoints;
+
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(xmlString, 'text/xml');
+  const marks: Waypoint[] = [];
+  gpxElements(xml, 'wpt').forEach((wpt) => {
+    const type = gpxChildText(wpt, 'type');
+    const desc = gpxChildText(wpt, 'desc');
+    const cmt = gpxChildText(wpt, 'cmt');
+    if (isOurTurnWaypoint(type) || isOurMileWaypoint(type, desc, cmt)) return;
+    const wp = waypointFromGpxWpt(wpt);
+    if (wp) marks.push(wp);
+  });
+  return marks;
 }
 
 export function mergeWaypoints(

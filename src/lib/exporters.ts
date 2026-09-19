@@ -25,15 +25,15 @@ export function exportGPX(
 `;
 
   const unit = settings?.mileUnit ?? 'miles';
-  const wpNames = waypoints.filter((w) => w.enabled).map((w) => w.name);
+  const enabledMarks = waypoints.filter((w) => w.enabled !== false);
+  const wpNames = enabledMarks.map((w) => w.name);
   const mileNames = uniqueMileExportNames(mileMarkers, unit, wpNames);
   const turnNames = uniqueTurnExportNames(detectedTurns, routePoints, unit, [...mileNames, ...wpNames]);
 
-  detectedTurns.forEach((turn, i) => {
-    const code = turnCode(turn.direction, turn.grade);
-    const label = turnNames[i];
-    const sym = garminTurnSymbol(turn.direction, turn.grade);
-    gpx += `  <wpt lat="${turn.lat}" lon="${turn.lon}"><name>${escXml(label)}</name><cmt>${turnComment(turn)}</cmt><desc>Turn ${i + 1}: ${code} ${turn.direction} at ${turn.angle.toFixed(1)} degrees</desc><sym>${escXml(sym)}</sym><type>turn</type>${GPX_WPT_EXTENSION}</wpt>\n`;
+  // User marks first so Tread keeps them if it caps imported waypoints.
+  enabledMarks.forEach((wp) => {
+    const cmt = wp.icon ? `<cmt>${escXml(wp.icon)}</cmt>` : '';
+    gpx += `  <wpt lat="${wp.lat}" lon="${wp.lon}"><name>${escXml(wp.name)}</name>${cmt}<desc>${escXml(wp.desc || '')}</desc><sym>${escXml(garminWaypointSymbol(wp.icon))}</sym><type>Waypoint</type>${GPX_WPT_EXTENSION}</wpt>\n`;
   });
 
   mileMarkers.forEach((mm, i) => {
@@ -44,12 +44,12 @@ export function exportGPX(
     gpx += `  <wpt lat="${mm.lat}" lon="${mm.lon}"><name>${escXml(displayLabel)}</name><cmt>${escXml(cmt)}</cmt><desc>Mile Marker: ${escXml(displayLabel)}</desc><sym>${escXml(sym)}</sym><type>Waypoint</type>${GPX_WPT_EXTENSION}</wpt>\n`;
   });
 
-  waypoints
-    .filter((w) => w.enabled)
-    .forEach((wp) => {
-      const cmt = wp.icon ? `<cmt>${escXml(wp.icon)}</cmt>` : '';
-      gpx += `  <wpt lat="${wp.lat}" lon="${wp.lon}"><name>${escXml(wp.name)}</name>${cmt}<desc>${escXml(wp.desc || '')}</desc><sym>${escXml(garminWaypointSymbol(wp.icon))}</sym><type>waypoint</type>${GPX_WPT_EXTENSION}</wpt>\n`;
-    });
+  detectedTurns.forEach((turn, i) => {
+    const code = turnCode(turn.direction, turn.grade);
+    const label = turnNames[i];
+    const sym = garminTurnSymbol(turn.direction, turn.grade);
+    gpx += `  <wpt lat="${turn.lat}" lon="${turn.lon}"><name>${escXml(label)}</name><cmt>${turnComment(turn)}</cmt><desc>Turn ${i + 1}: ${code} ${turn.direction} at ${turn.angle.toFixed(1)} degrees</desc><sym>${escXml(sym)}</sym><type>turn</type>${GPX_WPT_EXTENSION}</wpt>\n`;
+  });
 
   gpx += `  <trk><name>Route</name><trkseg>\n`;
   routePoints.forEach((p) => {
@@ -92,7 +92,7 @@ export function exportKML(
   });
 
   const unit = settings?.mileUnit ?? 'miles';
-  const wpNames = waypoints.filter((w) => w.enabled).map((w) => w.name);
+  const wpNames = waypoints.filter((w) => w.enabled !== false).map((w) => w.name);
   const mileNames = uniqueMileExportNames(mileMarkers, unit, wpNames);
   const turnNames = uniqueTurnExportNames(detectedTurns, routePoints, unit, [...mileNames, ...wpNames]);
 
@@ -111,7 +111,7 @@ export function exportKML(
   });
   kml += `  </Folder>\n`;
 
-  const enabledWps = waypoints.filter((w) => w.enabled);
+  const enabledWps = waypoints.filter((w) => w.enabled !== false);
   if (enabledWps.length) {
     kml += `  <Folder><name>Waypoints</name>\n`;
     enabledWps.forEach((wp) => {
