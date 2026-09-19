@@ -1,6 +1,6 @@
 import type { RoutePoint, DetectedTurn, MileMarker, Waypoint } from './types';
 import { parseGrade } from './types';
-import { parseTurnWaypoint } from './garmin';
+import { isAutoMileExportName, isExportedMileMarker, parseTurnWaypoint } from './garmin';
 import { haversine } from './geo';
 
 export interface ParseResult {
@@ -48,15 +48,20 @@ export function parseGPX(xmlString: string): ParseResult {
       isReimport = true;
       const parsed = parseTurnWaypoint(name, desc, sym, cmt);
       detectedTurns.push({ lat, lon, ...parsed });
-    } else if (type === 'mile_marker') {
+    } else if (isExportedMileMarker(type, desc, cmt, name)) {
       isReimport = true;
       // Restore custom icon from comment or a leftover emoji <sym>
       const mmIcon = [cmt, sym].find((s) => s && s !== 'mile_marker' && /\p{Emoji}/u.test(s)) || '📏';
       // Extract original distance label from desc like "Mile Marker: 1.0 mi"
       const distMatch = desc.match(/Mile Marker:\s*(.+)/i);
-      const distLabel = distMatch ? distMatch[1].trim() : name;
-      // If name differs from distance label, it's a custom label
-      const customLabel = name !== distLabel ? name : '';
+      const autoMile = name.match(/^(?:MI|KM)\s+(\d+(?:\.\d+)?)$/i);
+      let distLabel = distMatch ? distMatch[1].trim() : '';
+      if (!distLabel && autoMile) {
+        distLabel = `${autoMile[1]} ${/^KM/i.test(name) ? 'km' : 'mi'}`;
+      }
+      if (!distLabel) distLabel = name;
+      // Auto names (MI 1.0) and names that match the distance label are not custom
+      const customLabel = !isAutoMileExportName(name) && name !== distLabel ? name : '';
       mileMarkers.push({ lat, lon, distance: parseFloat(distLabel) || 0, label: distLabel, icon: mmIcon, customLabel });
     } else {
       const icon = [cmt, sym].find((s) => s && /\p{Emoji}/u.test(s)) || '📍';
@@ -153,7 +158,7 @@ export function parseKML(xmlString: string): ParseResult {
       // Extract distance label from description
       const distMatch = desc.match(/Distance:\s*(.+?)(?:,|$)/i);
       const distLabel = distMatch ? distMatch[1].trim() : displayName;
-      const customLabel = displayName !== distLabel ? displayName : '';
+      const customLabel = !isAutoMileExportName(displayName) && displayName !== distLabel ? displayName : '';
       mileMarkers.push({
         lat: parseFloat(parts[1]),
         lon: parseFloat(parts[0]),

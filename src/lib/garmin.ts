@@ -7,8 +7,9 @@ export function garminTurnSymbol(direction: 'left' | 'right', _grade?: TurnGrade
   return direction === 'left' ? 'Arrow, Left' : 'Arrow, Right';
 }
 
+/** Tread 2 native symbol (case-sensitive). Flag, Blue / Mile Marker are not on Tread 2. */
 export function garminMileSymbol(): string {
-  return 'Flag, Blue';
+  return 'flag';
 }
 
 const EMOJI_TO_GARMIN: Record<string, string> = {
@@ -51,7 +52,7 @@ const EMOJI_TO_GARMIN: Record<string, string> = {
   '🗻': 'Summit',
   '🛤️': 'Railway',
   '🚜': 'ATV',
-  '📏': 'Flag, Blue',
+  '📏': 'flag',
 };
 
 export function garminWaypointSymbol(icon: string): string {
@@ -156,6 +157,51 @@ export function uniqueTurnExportNames(
       name = `${code} ${metersToDisplay(meters, unit, decimals)}`;
     }
     if (used.has(name)) name = `${code} ${metersToDisplay(meters, unit, 4)}x`;
+    used.add(name);
+    return name;
+  });
+}
+
+/** Auto-generated Tread names like "MI 1.0" / "KM 12.4" — not a user custom label. */
+export function isAutoMileExportName(name: string): boolean {
+  return /^(?:MI|KM)\s+\d+(?:\.\d+)?$/i.test((name || '').trim());
+}
+
+export function isExportedMileMarker(type: string, desc: string, cmt: string, name: string): boolean {
+  if ((type || '').trim() === 'mile_marker') return true;
+  if (/^mile_marker$/i.test((cmt || '').trim())) return true;
+  if (/^Mile Marker:/i.test(desc || '')) return true;
+  if (isAutoMileExportName(name)) return true;
+  return false;
+}
+
+/**
+ * Digit-first names like "1.0 mi" get dropped or hidden on Tread.
+ * Prefix with MI/KM so they import as regular waypoints next to L3 12.4.
+ */
+export function uniqueMileExportNames(
+  markers: { distance: number; label: string; customLabel?: string }[],
+  unit: 'miles' | 'km' = 'miles',
+  reservedNames: string[] = []
+): string[] {
+  const prefix = unit === 'km' ? 'KM' : 'MI';
+  const used = new Set<string>(reservedNames.filter(Boolean));
+  return markers.map((mm) => {
+    if (mm.customLabel?.trim()) {
+      const name = mm.customLabel.trim();
+      if (!used.has(name)) {
+        used.add(name);
+        return name;
+      }
+    }
+    const n = Number.isFinite(mm.distance) ? mm.distance : parseFloat(mm.label) || 0;
+    let decimals = 1;
+    let name = `${prefix} ${n.toFixed(decimals)}`;
+    while (used.has(name) && decimals < 4) {
+      decimals += 1;
+      name = `${prefix} ${n.toFixed(decimals)}`;
+    }
+    if (used.has(name)) name = `${prefix} ${n.toFixed(4)}x`;
     used.add(name);
     return name;
   });
