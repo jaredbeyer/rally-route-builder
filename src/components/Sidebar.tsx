@@ -2,8 +2,10 @@
 
 import { useRef } from 'react';
 import type { RoutePoint, DetectedTurn, MileMarker, Waypoint, RouteSettings } from '@/lib/types';
-import { TURN_COLORS } from '@/lib/types';
+import { TURN_COLORS, TURN_GRADE_META, TURN_GRADES } from '@/lib/types';
+import type { TurnGrade } from '@/lib/types';
 import { totalDistance } from '@/lib/geo';
+import { displayMileMarkerLabel } from '@/lib/garmin';
 import TurnList from './TurnList';
 import WaypointList from './WaypointList';
 
@@ -33,6 +35,7 @@ interface SidebarProps {
   onZoomWaypoint: (idx: number) => void;
   onToggleAllWaypoints: (on: boolean) => void;
   onAddWaypoint: () => void;
+  onImportMarks: (content: string, name: string) => void;
   onEditMileMarker: (idx: number) => void;
   onDeleteMileMarker: (idx: number) => void;
   onZoomMileMarker: (idx: number) => void;
@@ -47,12 +50,13 @@ export default function Sidebar(props: SidebarProps) {
     onFileLoad, onResetFile, onSettingsChange, onReprocessTurns, onForceRedetect,
     onReprocessMiles, onEditTurn, onDeleteTurn, onZoomTurn,
     onEditWaypoint, onToggleWaypoint, onDeleteWaypoint, onZoomWaypoint,
-    onToggleAllWaypoints, onAddWaypoint,
+    onToggleAllWaypoints, onAddWaypoint, onImportMarks,
     onEditMileMarker, onDeleteMileMarker, onZoomMileMarker,
     onExportGPX, onExportKML, onSave,
   } = props;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const marksInputRef = useRef<HTMLInputElement>(null);
   const hasRoute = routePoints.length > 0;
 
   const handleFile = (file: File) => {
@@ -149,27 +153,30 @@ export default function Sidebar(props: SidebarProps) {
             <label style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>°</label>
           </div>
 
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <label style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>Warn before</label>
+            <input type="number" value={settings.warnBeforeFeet} min={0} max={650}
+              onChange={(e) => onSettingsChange({ warnBeforeFeet: parseFloat(e.target.value) || 0 })}
+              style={{ width: 70, background: 'var(--bg)', border: '1px solid #444', color: 'var(--text)', padding: '6px 8px', borderRadius: 4, fontSize: '0.9rem' }} />
+            <label style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>ft</label>
+          </div>
+
           {/* Thresholds */}
           <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 1, color: 'var(--accent)', marginBottom: 6, fontWeight: 600 }}>Sharpness Thresholds</div>
-            {[
-              { key: 'flat' as const, color: '#4ecdc4', label: 'Flat <' },
-              { key: 'slight' as const, color: '#f5a623', label: 'Slight <' },
-              { key: 'moderate' as const, color: '#e8751a', label: 'Moderate <' },
-              { key: 'sharp' as const, color: '#e94560', label: 'Sharp <' },
-            ].map(({ key, color, label }) => (
+            <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 1, color: 'var(--accent)', marginBottom: 6, fontWeight: 600 }}>Corner Grades (L/R)</div>
+            {([6, 5, 4, 3, 2] as const).map((key) => (
               <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: '0.78rem' }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                <span style={{ color: 'var(--text-dim)' }}>{label}</span>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: TURN_COLORS[key], flexShrink: 0 }} />
+                <span style={{ color: 'var(--text-dim)', minWidth: 72 }}>L{key}/R{key} &lt;</span>
                 <input type="number" value={settings.thresholds[key]} min={5} max={180}
                   onChange={(e) => onSettingsChange({ thresholds: { ...settings.thresholds, [key]: parseFloat(e.target.value) || settings.thresholds[key] } })}
                   style={{ width: 50, background: 'var(--bg)', border: '1px solid #444', color: 'var(--text)', padding: '3px 6px', borderRadius: 3, fontSize: '0.78rem', textAlign: 'center' }} />
-                <span style={{ color: 'var(--text-dim)' }}>°</span>
+                <span style={{ color: 'var(--text-dim)' }}>° {TURN_GRADE_META[key].short}</span>
               </div>
             ))}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: '0.78rem' }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#9b59b6', flexShrink: 0 }} />
-              <span style={{ color: 'var(--text-dim)' }}>Hairpin ≥ {settings.thresholds.sharp}°</span>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: TURN_COLORS[1], flexShrink: 0 }} />
+              <span style={{ color: 'var(--text-dim)' }}>L1/R1 ≥ {settings.thresholds[2]}° {TURN_GRADE_META[1].short}</span>
             </div>
           </div>
 
@@ -185,10 +192,10 @@ export default function Sidebar(props: SidebarProps) {
 
           <div style={{ marginTop: 10 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-              {Object.entries(TURN_COLORS).map(([name, color]) => (
-                <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', padding: '4px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.03)' }}>
-                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                  {name.charAt(0).toUpperCase() + name.slice(1)}
+              {TURN_GRADES.map((grade: TurnGrade) => (
+                <div key={grade} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', padding: '4px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.03)' }}>
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: TURN_COLORS[grade], flexShrink: 0 }} />
+                  L{grade}/R{grade} {TURN_GRADE_META[grade].short}
                 </div>
               ))}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', padding: '4px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.03)' }}>
@@ -237,7 +244,7 @@ export default function Sidebar(props: SidebarProps) {
                   >
                     <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>{mm.icon || '📏'}</span>
                     <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {mm.customLabel || mm.label}
+                      {displayMileMarkerLabel(mm, settings.mileUnit)}
                     </div>
                     <div
                       onClick={(e) => { e.stopPropagation(); onEditMileMarker(i); }}
@@ -267,7 +274,31 @@ export default function Sidebar(props: SidebarProps) {
             <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => onToggleAllWaypoints(true)}>✓ All On</button>
             <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => onToggleAllWaypoints(false)}>✕ All Off</button>
             <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={onAddWaypoint} title="Add a waypoint manually">+ Add</button>
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ flex: 1 }}
+              onClick={() => marksInputRef.current?.click()}
+              title="Add marks from a GPX/KML without replacing the route"
+            >
+              Import Marks
+            </button>
           </div>
+          <input
+            ref={marksInputRef}
+            type="file"
+            accept=".gpx,.kml"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const ext = file.name.split('.').pop()?.toLowerCase();
+              if (!['gpx', 'kml'].includes(ext || '')) { alert('Please load a .gpx or .kml file'); return; }
+              const reader = new FileReader();
+              reader.onload = (ev) => onImportMarks(ev.target?.result as string, file.name);
+              reader.readAsText(file);
+              e.target.value = '';
+            }}
+          />
           <WaypointList waypoints={waypoints} onEdit={onEditWaypoint} onToggle={onToggleWaypoint} onDelete={onDeleteWaypoint} onZoom={onZoomWaypoint} />
         </div>
       )}

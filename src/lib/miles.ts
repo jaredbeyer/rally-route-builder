@@ -1,4 +1,5 @@
 import type { RoutePoint, MileMarker, RouteSettings } from './types';
+import { formatMileMarkerLabel } from './garmin';
 import { haversine, interpolate } from './geo';
 
 export function calculateMileMarkers(
@@ -20,15 +21,12 @@ export function calculateMileMarkers(
     while (dist >= nextMarker) {
       const fraction = (nextMarker - prevDist) / segDist;
       const pt = interpolate(points[i - 1], points[i], fraction);
-      const num =
-        unit === 'miles'
-          ? (nextMarker / 1609.344).toFixed(1)
-          : (nextMarker / 1000).toFixed(1);
+      const distance = unit === 'miles' ? nextMarker / 1609.344 : nextMarker / 1000;
       markers.push({
         lat: pt.lat,
         lon: pt.lon,
-        distance: parseFloat(num),
-        label: `${num} ${unit === 'miles' ? 'mi' : 'km'}`,
+        distance,
+        label: formatMileMarkerLabel(distance, unit),
         icon: '📏',
       });
       nextMarker += meterInterval;

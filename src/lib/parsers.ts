@@ -1,5 +1,7 @@
 import type { RoutePoint, DetectedTurn, MileMarker, Waypoint } from './types';
-import { TURN_COLORS } from './types';
+import { parseGrade } from './types';
+import { formatMileMarkerLabel, isExportedMileMarker, isStockMileLabel, parseAutoMileExportName, parseTurnWaypoint } from './garmin';
+import { haversine } from './geo';
 
 export interface ParseResult {
   routePoints: RoutePoint[];
@@ -7,6 +9,39 @@ export interface ParseResult {
   mileMarkers: MileMarker[];
   waypoints: Waypoint[];
   isReimport: boolean;
+}
+
+function gpxElements(root: Document | Element, localName: string): Element[] {
+  const out: Element[] = [];
+  const seen = new Set<Element>();
+  const add = (list: ArrayLike<Element>) => {
+    for (let i = 0; i < list.length; i++) {
+      const el = list[i];
+      if (!seen.has(el)) {
+        seen.add(el);
+        out.push(el);
+      }
+    }
+  };
+  add(root.getElementsByTagName(localName));
+  add(root.getElementsByTagNameNS('*', localName));
+  add(root.querySelectorAll(localName));
+  return out;
+}
+
+function gpxChildText(el: Element, localName: string): string {
+  return gpxElements(el, localName)[0]?.textContent || '';
+}
+
+function isOurTurnWaypoint(type: string): boolean {
+  return (type || '').trim() === 'turn';
+}
+
+function isOurMileWaypoint(type: string, desc: string, cmt: string): boolean {
+  if ((type || '').trim() === 'mile_marker') return true;
+  if (/^mile_marker$/i.test((cmt || '').trim())) return true;
+  if (/^Mile Marker:/i.test(desc || '')) return true;
+  return false;
 }
 
 export function parseGPX(xmlString: string): ParseResult {
@@ -20,8 +55,8 @@ export function parseGPX(xmlString: string): ParseResult {
   let isReimport = false;
 
   // Track points
-  const trkpts = xml.querySelectorAll('trkpt');
-  const rtepts = xml.querySelectorAll('rtept');
+  const trkpts = gpxElements(xml, 'trkpt');
+  const rtepts = gpxElements(xml, 'rtept');
   const pts = trkpts.length ? trkpts : rtepts;
   pts.forEach((pt) => {
     routePoints.push({
@@ -33,43 +68,43 @@ export function parseGPX(xmlString: string): ParseResult {
   });
 
   // Waypoints — sort into categories by <type> tag
-  xml.querySelectorAll('wpt').forEach((wpt) => {
+  gpxElements(xml, 'wpt').forEach((wpt) => {
     const lat = parseFloat(wpt.getAttribute('lat') || '0');
     const lon = parseFloat(wpt.getAttribute('lon') || '0');
-    const name = wpt.querySelector('name')?.textContent || 'Unnamed';
-    const desc = wpt.querySelector('desc')?.textContent || '';
-    const sym = wpt.querySelector('sym')?.textContent || '';
-    const type = wpt.querySelector('type')?.textContent || '';
+    const name = gpxChildText(wpt, 'name') || 'Unnamed';
+    const desc = gpxChildText(wpt, 'desc');
+    const sym = gpxChildText(wpt, 'sym');
+    const cmt = gpxChildText(wpt, 'cmt');
+    const type = gpxChildText(wpt, 'type');
 
     if (type === 'turn') {
       isReimport = true;
-      const symParts = sym.split('_');
-      const sharpness = Object.keys(TURN_COLORS).includes(symParts[0])
-        ? (symParts[0] as DetectedTurn['sharpness'])
-        : 'moderate';
-      const direction: 'left' | 'right' = symParts[1] === 'right' ? 'right' : 'left';
-      const angleMatch = desc.match(/([\d.]+)\s*degrees/i);
-      const angle = angleMatch ? parseFloat(angleMatch[1]) : 90;
-      const autoPattern = /^(FLAT|SLIGHT|MODERATE|SHARP|HAIRPIN)\s+[LR]\s+\d+deg$/i;
-      const label = autoPattern.test(name) ? '' : name;
-      detectedTurns.push({ lat, lon, angle, direction, sharpness, label, idx: 0 });
-    } else if (type === 'mile_marker') {
+      const parsed = parseTurnWaypoint(name, desc, sym, cmt);
+      detectedTurns.push({ lat, lon, ...parsed });
+    } else if (isExportedMileMarker(type, desc, cmt, name)) {
       isReimport = true;
-      // Restore custom icon from sym if it's an emoji (not "mile_marker")
-      const mmIcon = sym && sym !== 'mile_marker' && /\p{Emoji}/u.test(sym) ? sym : '📏';
+      // Restore custom icon from comment or a leftover emoji <sym>
+      const mmIcon = [cmt, sym].find((s) => s && s !== 'mile_marker' && /\p{Emoji}/u.test(s)) || '📏';
       // Extract original distance label from desc like "Mile Marker: 1.0 mi"
       const distMatch = desc.match(/Mile Marker:\s*(.+)/i);
-      const distLabel = distMatch ? distMatch[1].trim() : name;
-      // If name differs from distance label, it's a custom label
-      const customLabel = name !== distLabel ? name : '';
-      mileMarkers.push({ lat, lon, distance: parseFloat(distLabel) || 0, label: distLabel, icon: mmIcon, customLabel });
+      const autoMile = parseAutoMileExportName(name);
+      let distLabel = distMatch ? distMatch[1].trim() : '';
+      if (!distLabel && autoMile) {
+        distLabel = `${autoMile.value} ${autoMile.unit}`;
+      }
+      if (!distLabel) distLabel = name;
+      const distance = parseFloat(distLabel) || parseFloat(autoMile?.value || '') || 0;
+      const unit = /km/i.test(distLabel) || autoMile?.unit === 'km' ? 'km' : 'miles';
+      const label = formatMileMarkerLabel(distance, unit);
+      const customLabel = !isStockMileLabel(name) && name !== label ? name : '';
+      mileMarkers.push({ lat, lon, distance, label, icon: mmIcon, customLabel });
     } else {
-      const icon = sym && /\p{Emoji}/u.test(sym) ? sym : '📍';
+      const icon = [cmt, sym].find((s) => s && /\p{Emoji}/u.test(s)) || '📍';
       waypoints.push({
         name,
         lat,
         lon,
-        ele: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele')!.textContent || '0') : null,
+        ele: gpxChildText(wpt, 'ele') ? parseFloat(gpxChildText(wpt, 'ele')) : null,
         desc,
         icon,
         enabled: true,
@@ -133,15 +168,13 @@ export function parseKML(xmlString: string): ParseResult {
       const name = pm.querySelector('name')?.textContent || '';
       const styleUrl = (pm.querySelector('styleUrl')?.textContent || '').replace('#', '');
       const styleParts = styleUrl.split('_');
-      const sharpness = Object.keys(TURN_COLORS).includes(styleParts[0])
-        ? (styleParts[0] as DetectedTurn['sharpness'])
-        : 'moderate';
+      const grade = parseGrade(styleParts[0]);
       const direction: 'left' | 'right' = styleParts[1] === 'right' ? 'right' : 'left';
       const angleMatch = name.match(/(\d+)deg/i);
       const angle = angleMatch ? parseFloat(angleMatch[1]) : 90;
-      const autoPattern = /^(FLAT|SLIGHT|MODERATE|SHARP|HAIRPIN)\s+[LR]\s+\d+deg$/i;
+      const autoPattern = /^(?:[LR][1-6]|(?:FLAT|SLIGHT|MODERATE|SHARP|HAIRPIN)\s+[LR])(?:\s+\d+deg)?$/i;
       const label = autoPattern.test(name) ? '' : name;
-      detectedTurns.push({ lat, lon, angle, direction, sharpness, label, idx: 0 });
+      detectedTurns.push({ lat, lon, angle, direction, grade, label });
     });
   }
 
@@ -160,12 +193,16 @@ export function parseKML(xmlString: string): ParseResult {
       // Extract distance label from description
       const distMatch = desc.match(/Distance:\s*(.+?)(?:,|$)/i);
       const distLabel = distMatch ? distMatch[1].trim() : displayName;
-      const customLabel = displayName !== distLabel ? displayName : '';
+      const autoMile = parseAutoMileExportName(displayName);
+      const distance = parseFloat(distLabel) || parseFloat(autoMile?.value || '') || 0;
+      const unit = /km/i.test(distLabel) || autoMile?.unit === 'km' ? 'km' : 'miles';
+      const label = formatMileMarkerLabel(distance, unit);
+      const customLabel = !isStockMileLabel(displayName) && displayName !== label ? displayName : '';
       mileMarkers.push({
         lat: parseFloat(parts[1]),
         lon: parseFloat(parts[0]),
-        distance: parseFloat(distLabel) || 0,
-        label: distLabel,
+        distance,
+        label,
         icon: mmIcon,
         customLabel,
       });
@@ -214,4 +251,62 @@ export function parseKML(xmlString: string): ParseResult {
   }
 
   return { routePoints, detectedTurns, mileMarkers, waypoints, isReimport };
+}
+
+function waypointFromGpxWpt(wpt: Element): Waypoint | null {
+  const lat = parseFloat(wpt.getAttribute('lat') || '');
+  const lon = parseFloat(wpt.getAttribute('lon') || '');
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  const name = gpxChildText(wpt, 'name') || 'Unnamed';
+  const desc = gpxChildText(wpt, 'desc');
+  const sym = gpxChildText(wpt, 'sym');
+  const cmt = gpxChildText(wpt, 'cmt');
+  const icon = [cmt, sym].find((s) => s && /\p{Emoji}/u.test(s)) || '📍';
+  return {
+    name,
+    lat,
+    lon,
+    ele: gpxChildText(wpt, 'ele') ? parseFloat(gpxChildText(wpt, 'ele')) : null,
+    desc,
+    icon,
+    enabled: true,
+  };
+}
+
+/** Read only marks/waypoints from a GPX or KML. Ignores track, turns, and mile markers. */
+export function parseMarksOnly(xmlString: string, filename: string): Waypoint[] {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  if (ext === 'kml') return parseKML(xmlString).waypoints;
+
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(xmlString, 'text/xml');
+  const marks: Waypoint[] = [];
+  gpxElements(xml, 'wpt').forEach((wpt) => {
+    const type = gpxChildText(wpt, 'type');
+    const desc = gpxChildText(wpt, 'desc');
+    const cmt = gpxChildText(wpt, 'cmt');
+    if (isOurTurnWaypoint(type) || isOurMileWaypoint(type, desc, cmt)) return;
+    const wp = waypointFromGpxWpt(wpt);
+    if (wp) marks.push(wp);
+  });
+  return marks;
+}
+
+export function mergeWaypoints(
+  existing: Waypoint[],
+  incoming: Waypoint[]
+): { waypoints: Waypoint[]; added: number; skipped: number } {
+  const waypoints = [...existing];
+  let added = 0;
+  let skipped = 0;
+  for (const wp of incoming) {
+    const dup = waypoints.some((e) => haversine(e, wp) < 15);
+    if (dup) {
+      skipped += 1;
+      continue;
+    }
+    waypoints.push(wp);
+    added += 1;
+  }
+  return { waypoints, added, skipped };
 }

@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { Project, RoutePoint, DetectedTurn, MileMarker, Waypoint, RouteSettings } from '@/lib/types';
-import { DEFAULT_SETTINGS, TURN_COLORS } from '@/lib/types';
+import { DEFAULT_SETTINGS, TURN_GRADE_META, formatTurnLabel, normalizeSettings, normalizeTurn, turnCode, turnColor } from '@/lib/types';
 import { detectTurns } from '@/lib/turns';
 import { calculateMileMarkers } from '@/lib/miles';
-import { parseGPX, parseKML } from '@/lib/parsers';
+import { parseGPX, parseKML, parseMarksOnly, mergeWaypoints } from '@/lib/parsers';
 import { exportGPX, exportKML, downloadFile } from '@/lib/exporters';
+import { displayMileMarkerLabel } from '@/lib/garmin';
 import Sidebar from './Sidebar';
 import IconPickerModal from './IconPickerModal';
 import L from 'leaflet';
@@ -24,10 +25,12 @@ export default function MapEditor({ project }: MapEditorProps) {
 
   // Route data state
   const [routePoints, setRoutePoints] = useState<RoutePoint[]>(project.route_points || []);
-  const [detectedTurns, setDetectedTurns] = useState<DetectedTurn[]>(project.detected_turns || []);
+  const [detectedTurns, setDetectedTurns] = useState<DetectedTurn[]>(
+    () => (project.detected_turns || []).map(normalizeTurn)
+  );
   const [mileMarkers, setMileMarkers] = useState<MileMarker[]>(project.mile_markers || []);
   const [waypoints, setWaypoints] = useState<Waypoint[]>(project.waypoints || []);
-  const [settings, setSettings] = useState<RouteSettings>(project.settings || DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<RouteSettings>(() => normalizeSettings(project.settings || DEFAULT_SETTINGS));
   const [fileName, setFileName] = useState<string | null>(project.original_file_name || null);
 
   // UI state
@@ -114,17 +117,18 @@ export default function MapEditor({ project }: MapEditorProps) {
 
     // Turn markers
     detectedTurns.forEach((turn, tidx) => {
-      const color = TURN_COLORS[turn.sharpness];
-      const arrowChar = turn.direction === 'left' ? '↰' : '↱';
+      const color = turnColor(turn.grade);
+      const code = turnCode(turn.direction, turn.grade);
       const borderStyle = liveEditMode ? '2px dashed #ff0' : '2px solid #fff';
       const icon = L.divIcon({
         className: '',
-        html: `<div style="background:${color};color:#fff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:bold;border:${borderStyle};box-shadow:0 1px 6px rgba(0,0,0,0.5);line-height:1;cursor:${liveEditMode ? 'grab' : 'pointer'};">${arrowChar}</div>`,
-        iconSize: [26, 26], iconAnchor: [13, 13],
+        html: `<div style="background:${color};color:#fff;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;letter-spacing:-0.3px;border:${borderStyle};box-shadow:0 1px 6px rgba(0,0,0,0.5);line-height:1;cursor:${liveEditMode ? 'grab' : 'pointer'};">${code}</div>`,
+        iconSize: [32, 32], iconAnchor: [16, 16],
       });
-      const turnLabel = turn.label || `${turn.sharpness.toUpperCase()} ${turn.direction.toUpperCase()}`;
+      const turnLabel = formatTurnLabel(turn);
+      const gradeHint = TURN_GRADE_META[turn.grade].hint;
       const m = L.marker([turn.lat, turn.lon], { icon, draggable: liveEditMode }).addTo(map);
-      m.bindPopup(`<b>${turnLabel}</b><br>Angle: ${turn.angle.toFixed(1)}°<br><small>${turn.sharpness} ${turn.direction}</small><div style="display:flex;gap:4px;margin-top:8px;"><button class="popup-btn popup-btn-edit" data-turn="${tidx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#3498db;color:#fff;">✏️ Edit</button><button class="popup-btn popup-btn-del" data-turndelete="${tidx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#e94560;color:#fff;">🗑 Remove</button></div>`);
+      m.bindPopup(`<b>${turnLabel}</b><br>Angle: ${turn.angle.toFixed(1)}°<br><small>${code} · ${gradeHint}</small><div style="display:flex;gap:4px;margin-top:8px;"><button class="popup-btn popup-btn-edit" data-turn="${tidx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#3498db;color:#fff;">✏️ Edit</button><button class="popup-btn popup-btn-del" data-turndelete="${tidx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#e94560;color:#fff;">🗑 Remove</button></div>`);
       if (liveEditMode) {
         m.on('dragend', (e: L.DragEndEvent) => {
           const pos = (e.target as L.Marker).getLatLng();
@@ -145,17 +149,17 @@ export default function MapEditor({ project }: MapEditorProps) {
       const mmIcon = mm.icon && mm.icon !== '📏'
         ? L.divIcon({
             className: '',
-            html: `<div style="font-size:1.3rem;text-shadow:0 1px 4px #000;cursor:${mmCursor};${liveEditMode ? 'filter:drop-shadow(0 0 3px #ff0);' : ''}" title="${mm.customLabel || mm.label}">${mm.icon}</div>`,
+            html: `<div style="font-size:1.3rem;text-shadow:0 1px 4px #000;cursor:${mmCursor};${liveEditMode ? 'filter:drop-shadow(0 0 3px #ff0);' : ''}" title="${displayMileMarkerLabel(mm, settings.mileUnit)}">${mm.icon}</div>`,
             iconSize: [24, 24], iconAnchor: [12, 12],
           })
         : L.divIcon({
             className: '',
-            html: `<div style="background:#3498db;color:#fff;padding:2px 6px;border-radius:10px;font-size:11px;font-weight:bold;white-space:nowrap;border:${mmBorderStyle};box-shadow:0 1px 4px rgba(0,0,0,0.5);cursor:${mmCursor};">${mm.customLabel || mm.label}</div>`,
+            html: `<div style="background:#3498db;color:#fff;padding:2px 6px;border-radius:10px;font-size:11px;font-weight:bold;white-space:nowrap;border:${mmBorderStyle};box-shadow:0 1px 4px rgba(0,0,0,0.5);cursor:${mmCursor};">${displayMileMarkerLabel(mm, settings.mileUnit)}</div>`,
             iconSize: [0, 0], iconAnchor: [20, 10],
           });
-      const displayLabel = mm.customLabel || mm.label;
+      const displayLabel = displayMileMarkerLabel(mm, settings.mileUnit);
       const m = L.marker([mm.lat, mm.lon], { icon: mmIcon, draggable: liveEditMode }).addTo(map);
-      m.bindPopup(`<b>${mm.icon && mm.icon !== '📏' ? mm.icon + ' ' : ''}${displayLabel}</b><br><small>${mm.label} (distance)</small><br><small>${mm.lat.toFixed(5)}, ${mm.lon.toFixed(5)}</small><div style="display:flex;gap:4px;margin-top:8px;"><button data-mmedit="${midx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#3498db;color:#fff;">✏️ Edit</button><button data-mmdelete="${midx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#e94560;color:#fff;">🗑 Remove</button></div>`);
+      m.bindPopup(`<b>${mm.icon && mm.icon !== '📏' ? mm.icon + ' ' : ''}${displayLabel}</b><br><small>${displayLabel}</small><br><small>${mm.lat.toFixed(5)}, ${mm.lon.toFixed(5)}</small><div style="display:flex;gap:4px;margin-top:8px;"><button data-mmedit="${midx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#3498db;color:#fff;">✏️ Edit</button><button data-mmdelete="${midx}" style="padding:4px 10px;border-radius:3px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;background:#e94560;color:#fff;">🗑 Remove</button></div>`);
       if (liveEditMode) {
         m.on('dragend', (e: L.DragEndEvent) => {
           const pos = (e.target as L.Marker).getLatLng();
@@ -171,7 +175,7 @@ export default function MapEditor({ project }: MapEditorProps) {
 
     // Waypoints (draggable only in live edit mode)
     waypoints.forEach((wp, idx) => {
-      if (!wp.enabled) return;
+      if (wp.enabled === false) return;
       const wpCursor = liveEditMode ? 'grab' : 'pointer';
       const icon = L.divIcon({
         className: '',
@@ -247,7 +251,7 @@ export default function MapEditor({ project }: MapEditorProps) {
         };
       });
     });
-  }, [routePoints, detectedTurns, mileMarkers, waypoints, deleteMode, liveEditMode]);
+  }, [routePoints, detectedTurns, mileMarkers, waypoints, deleteMode, liveEditMode, settings.mileUnit]);
 
   useEffect(() => {
     renderMap();
@@ -274,11 +278,11 @@ export default function MapEditor({ project }: MapEditorProps) {
     const result = ext === 'kml' ? parseKML(content) : parseGPX(content);
 
     setRoutePoints(result.routePoints);
-    setWaypoints(result.waypoints);
+    setWaypoints((prev) => mergeWaypoints(prev, result.waypoints).waypoints);
     setFileName(name);
 
     if (result.isReimport && result.detectedTurns.length > 0) {
-      setDetectedTurns(result.detectedTurns);
+      setDetectedTurns(result.detectedTurns.map(normalizeTurn));
     } else {
       setDetectedTurns(detectTurns(result.routePoints, settings));
     }
@@ -290,13 +294,33 @@ export default function MapEditor({ project }: MapEditorProps) {
     }
   };
 
+  const handleImportMarks = (content: string, name: string) => {
+    const incoming = parseMarksOnly(content, name);
+    if (!incoming.length) {
+      alert('No marks/waypoints found in that file.');
+      return;
+    }
+    setWaypoints((prev) => {
+      const result = mergeWaypoints(prev, incoming);
+      const skip = result.skipped ? ` (${result.skipped} already on the map)` : '';
+      setTimeout(() => {
+        alert(`Added ${result.added} mark${result.added === 1 ? '' : 's'} from ${name}${skip}.`);
+      }, 0);
+      return result.waypoints;
+    });
+  };
+
   const handleResetFile = () => {
     setRoutePoints([]); setDetectedTurns([]); setMileMarkers([]); setWaypoints([]);
     setFileName(null); setPinMode(false); setDeleteMode(false); setLiveEditMode(false);
   };
 
   const handleSettingsChange = (partial: Partial<RouteSettings>) => {
-    setSettings((prev) => ({ ...prev, ...partial }));
+    setSettings((prev) => ({
+      ...prev,
+      ...partial,
+      thresholds: partial.thresholds ? { ...prev.thresholds, ...partial.thresholds } : prev.thresholds,
+    }));
   };
 
   const handleReprocessTurns = () => {
@@ -314,12 +338,12 @@ export default function MapEditor({ project }: MapEditorProps) {
   };
 
   const handleExportGPX = () => {
-    const content = exportGPX(routePoints, detectedTurns, mileMarkers, waypoints);
+    const content = exportGPX(routePoints, detectedTurns, mileMarkers, waypoints, settings);
     downloadFile(content, `${project.name || 'rally-route'}.gpx`, 'application/gpx+xml');
   };
 
   const handleExportKML = () => {
-    const content = exportKML(routePoints, detectedTurns, mileMarkers, waypoints);
+    const content = exportKML(routePoints, detectedTurns, mileMarkers, waypoints, settings);
     downloadFile(content, `${project.name || 'rally-route'}.kml`, 'application/vnd.google-earth.kml+xml');
   };
 
@@ -358,7 +382,7 @@ export default function MapEditor({ project }: MapEditorProps) {
   };
 
   const handleSaveTurn = (turn: DetectedTurn, index: number) => {
-    setDetectedTurns((prev) => { const next = [...prev]; next[index] = turn; return next; });
+    setDetectedTurns((prev) => { const next = [...prev]; next[index] = normalizeTurn(turn); return next; });
   };
 
   const handleDeleteTurn = (index: number) => {
@@ -409,6 +433,7 @@ export default function MapEditor({ project }: MapEditorProps) {
         onZoomWaypoint={(idx) => { const w = waypoints[idx]; if (w) zoomTo(w.lat, w.lon); }}
         onToggleAllWaypoints={(on) => setWaypoints((prev) => prev.map((w) => ({ ...w, enabled: on })))}
         onAddWaypoint={() => { setModalMode('add'); setEditIndex(null); setModalOpen(true); }}
+        onImportMarks={handleImportMarks}
         onEditMileMarker={(idx) => { setModalMode('editMileMarker'); setEditIndex(idx); setModalOpen(true); }}
         onDeleteMileMarker={(idx) => setMileMarkers((prev) => prev.filter((_, i) => i !== idx))}
         onZoomMileMarker={(idx) => { const m = mileMarkers[idx]; if (m) zoomTo(m.lat, m.lon); }}
