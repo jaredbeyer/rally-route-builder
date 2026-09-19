@@ -162,9 +162,17 @@ export function uniqueTurnExportNames(
   });
 }
 
-/** Auto-generated Tread names like "MI 1.0" / "KM 12.4" — not a user custom label. */
+const AUTO_MILE_NAME_RE = /^(?:Mile|Km|MI|KM)\s+(\d+(?:\.\d+)?)[a-z]?$/i;
+
+/** Auto-generated Tread names like "Mile 1" / "Km 12" — not a user custom label. */
 export function isAutoMileExportName(name: string): boolean {
-  return /^(?:MI|KM)\s+\d+(?:\.\d+)?$/i.test((name || '').trim());
+  return AUTO_MILE_NAME_RE.test((name || '').trim());
+}
+
+export function parseAutoMileExportName(name: string): { value: string; unit: 'mi' | 'km' } | null {
+  const m = (name || '').trim().match(AUTO_MILE_NAME_RE);
+  if (!m) return null;
+  return { value: m[1], unit: /^(?:Km|KM)\b/i.test(name.trim()) ? 'km' : 'mi' };
 }
 
 export function isExportedMileMarker(type: string, desc: string, cmt: string, name: string): boolean {
@@ -177,14 +185,14 @@ export function isExportedMileMarker(type: string, desc: string, cmt: string, na
 
 /**
  * Digit-first names like "1.0 mi" get dropped or hidden on Tread.
- * Prefix with MI/KM so they import as regular waypoints next to L3 12.4.
+ * Use whole-mile names: Mile 1, Mile 2.
  */
 export function uniqueMileExportNames(
   markers: { distance: number; label: string; customLabel?: string }[],
   unit: 'miles' | 'km' = 'miles',
   reservedNames: string[] = []
 ): string[] {
-  const prefix = unit === 'km' ? 'KM' : 'MI';
+  const prefix = unit === 'km' ? 'Km' : 'Mile';
   const used = new Set<string>(reservedNames.filter(Boolean));
   return markers.map((mm) => {
     if (mm.customLabel?.trim()) {
@@ -194,14 +202,19 @@ export function uniqueMileExportNames(
         return name;
       }
     }
-    const n = Number.isFinite(mm.distance) ? mm.distance : parseFloat(mm.label) || 0;
-    let decimals = 1;
-    let name = `${prefix} ${n.toFixed(decimals)}`;
-    while (used.has(name) && decimals < 4) {
-      decimals += 1;
-      name = `${prefix} ${n.toFixed(decimals)}`;
+    const raw = Number.isFinite(mm.distance) ? mm.distance : parseFloat(mm.label) || 0;
+    const n = Math.round(raw);
+    let name = `${prefix} ${n}`;
+    if (used.has(name)) {
+      for (let i = 97; i <= 122; i++) {
+        const candidate = `${prefix} ${n}${String.fromCharCode(i)}`;
+        if (!used.has(candidate)) {
+          name = candidate;
+          break;
+        }
+      }
     }
-    if (used.has(name)) name = `${prefix} ${n.toFixed(4)}x`;
+    if (used.has(name)) name = `${prefix} ${n}x`;
     used.add(name);
     return name;
   });

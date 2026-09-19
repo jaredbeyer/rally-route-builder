@@ -559,7 +559,13 @@ function metersToDisplay(meters, unit, decimals) {
 }
 
 function isAutoMileExportName(name) {
-  return /^(?:MI|KM)\s+\d+(?:\.\d+)?$/i.test((name || '').trim());
+  return /^(?:Mile|Km|MI|KM)\s+\d+(?:\.\d+)?[a-z]?$/i.test((name || '').trim());
+}
+
+function parseAutoMileExportName(name) {
+  const m = (name || '').trim().match(/^(?:Mile|Km|MI|KM)\s+(\d+(?:\.\d+)?)[a-z]?$/i);
+  if (!m) return null;
+  return { value: m[1], unit: /^(?:Km|KM)\b/i.test(name.trim()) ? 'km' : 'mi' };
 }
 
 function isExportedMileMarker(type, desc, cmt, name) {
@@ -571,21 +577,23 @@ function isExportedMileMarker(type, desc, cmt, name) {
 }
 
 function uniqueMileExportNames(markers, unit, reservedNames) {
-  const prefix = unit === 'km' ? 'KM' : 'MI';
+  const prefix = unit === 'km' ? 'Km' : 'Mile';
   const used = new Set((reservedNames || []).filter(Boolean));
   return markers.map(mm => {
     if (mm.customLabel && mm.customLabel.trim()) {
       const name = mm.customLabel.trim();
       if (!used.has(name)) { used.add(name); return name; }
     }
-    const n = Number.isFinite(mm.distance) ? mm.distance : parseFloat(mm.label) || 0;
-    let decimals = 1;
-    let name = `${prefix} ${n.toFixed(decimals)}`;
-    while (used.has(name) && decimals < 4) {
-      decimals += 1;
-      name = `${prefix} ${n.toFixed(decimals)}`;
+    const raw = Number.isFinite(mm.distance) ? mm.distance : parseFloat(mm.label) || 0;
+    const n = Math.round(raw);
+    let name = `${prefix} ${n}`;
+    if (used.has(name)) {
+      for (let i = 97; i <= 122; i++) {
+        const candidate = `${prefix} ${n}${String.fromCharCode(i)}`;
+        if (!used.has(candidate)) { name = candidate; break; }
+      }
     }
-    if (used.has(name)) name = `${prefix} ${n.toFixed(4)}x`;
+    if (used.has(name)) name = `${prefix} ${n}x`;
     used.add(name);
     return name;
   });
@@ -786,9 +794,9 @@ function parseGPX(xml, fname) {
       isReimport = true;
       const mmIcon = [cmt, sym].find(s => s && s !== 'mile_marker' && /\p{Emoji}/u.test(s)) || '📏';
       const distMatch = desc.match(/Mile Marker:\s*(.+)/i);
-      const autoMile = name.match(/^(?:MI|KM)\s+(\d+(?:\.\d+)?)$/i);
+      const autoMile = parseAutoMileExportName(name);
       let distLabel = distMatch ? distMatch[1].trim() : '';
-      if (!distLabel && autoMile) distLabel = `${autoMile[1]} ${/^KM/i.test(name) ? 'km' : 'mi'}`;
+      if (!distLabel && autoMile) distLabel = `${autoMile.value} ${autoMile.unit}`;
       if (!distLabel) distLabel = name;
       const customLabel = !isAutoMileExportName(name) && name !== distLabel ? name : '';
       mileMarkers.push({ lat, lon, distance: parseFloat(distLabel) || 0, label: distLabel, icon: mmIcon, customLabel });
@@ -862,9 +870,9 @@ function parseKML(xml, fname) {
       const mmIcon = emojiMatch ? emojiMatch[1] : '📏';
       const displayName = emojiMatch ? (emojiMatch[2] || '0') : rawName;
       const distMatch = desc.match(/Distance:\s*(.+?)(?:,|$)/i);
-      const autoMile = displayName.match(/^(?:MI|KM)\s+(\d+(?:\.\d+)?)$/i);
+      const autoMile = parseAutoMileExportName(displayName);
       let distLabel = distMatch ? distMatch[1].trim() : '';
-      if (!distLabel && autoMile) distLabel = `${autoMile[1]} ${/^KM/i.test(displayName) ? 'km' : 'mi'}`;
+      if (!distLabel && autoMile) distLabel = `${autoMile.value} ${autoMile.unit}`;
       if (!distLabel) distLabel = displayName;
       const customLabel = !isAutoMileExportName(displayName) && displayName !== distLabel ? displayName : '';
       mileMarkers.push({ lat: parseFloat(parts[1]), lon: parseFloat(parts[0]), distance: parseFloat(distLabel) || 0, label: distLabel, icon: mmIcon, customLabel });

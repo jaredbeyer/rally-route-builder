@@ -1,6 +1,6 @@
 import type { RoutePoint, DetectedTurn, MileMarker, Waypoint } from './types';
 import { parseGrade } from './types';
-import { isAutoMileExportName, isExportedMileMarker, parseTurnWaypoint } from './garmin';
+import { isAutoMileExportName, isExportedMileMarker, parseAutoMileExportName, parseTurnWaypoint } from './garmin';
 import { haversine } from './geo';
 
 export interface ParseResult {
@@ -54,13 +54,13 @@ export function parseGPX(xmlString: string): ParseResult {
       const mmIcon = [cmt, sym].find((s) => s && s !== 'mile_marker' && /\p{Emoji}/u.test(s)) || '📏';
       // Extract original distance label from desc like "Mile Marker: 1.0 mi"
       const distMatch = desc.match(/Mile Marker:\s*(.+)/i);
-      const autoMile = name.match(/^(?:MI|KM)\s+(\d+(?:\.\d+)?)$/i);
+      const autoMile = parseAutoMileExportName(name);
       let distLabel = distMatch ? distMatch[1].trim() : '';
       if (!distLabel && autoMile) {
-        distLabel = `${autoMile[1]} ${/^KM/i.test(name) ? 'km' : 'mi'}`;
+        distLabel = `${autoMile.value} ${autoMile.unit}`;
       }
       if (!distLabel) distLabel = name;
-      // Auto names (MI 1.0) and names that match the distance label are not custom
+      // Auto names (Mile 1) and names that match the distance label are not custom
       const customLabel = !isAutoMileExportName(name) && name !== distLabel ? name : '';
       mileMarkers.push({ lat, lon, distance: parseFloat(distLabel) || 0, label: distLabel, icon: mmIcon, customLabel });
     } else {
